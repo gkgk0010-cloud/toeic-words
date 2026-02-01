@@ -103,6 +103,11 @@
       document.getElementById('pageTitle').textContent = setTitle;
       var errEl = document.getElementById('loadError');
       if (errEl) { errEl.style.display = 'none'; errEl.textContent = ''; }
+      var initEl = document.getElementById('initStatus');
+      if (initEl) initEl.style.display = 'none';
+      if (allWords.length === 0) {
+        if (errEl) { errEl.textContent = '단어가 0개입니다. data/words.json을 확인해 주세요.'; errEl.style.display = 'block'; }
+      }
     } catch (e) {
       console.error('Failed to load words:', e);
       allWords = [];
@@ -371,19 +376,31 @@
     }).join('');
   }
 
+  function hideInitStatus() {
+    var s = document.getElementById('initStatus');
+    if (s) s.style.display = 'none';
+  }
+
   // ——— 초기화 ———
   loadData().then(() => {
     try {
       applyConnectorFilterUI();
       showView(parseHash());
+      hideInitStatus();
     } catch (e) {
       console.error('showView error', e);
+      hideInitStatus();
       var errEl = document.getElementById('loadError');
       if (errEl) { errEl.textContent = '화면 표시 오류: ' + (e.message || e); errEl.style.display = 'block'; }
+      var s = document.getElementById('initStatus');
+      if (s) { s.textContent = '화면 오류: ' + (e.message || e); s.style.color = '#c00'; s.style.display = 'block'; }
     }
   }).catch(function (e) {
     console.error('loadData error', e);
+    hideInitStatus();
     var errEl = document.getElementById('loadError');
     if (errEl) { errEl.textContent = '로드 오류: ' + (e.message || e); errEl.style.display = 'block'; }
+    var s = document.getElementById('initStatus');
+    if (s) { s.textContent = '로드 오류: ' + (e.message || e); s.style.color = '#c00'; s.style.display = 'block'; }
   });
 })();

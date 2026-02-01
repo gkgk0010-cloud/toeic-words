@@ -13,6 +13,7 @@
 <body>
   <header class="header">
     <h1 class="title" id="pageTitle">토익 시제부사</h1>
+    <p id="initStatus" style="margin:8px 0; color:#666; font-size:14px;">로딩 중…</p>
     <p id="loadError" style="display:none; color:#c00; font-size:14px; margin-top:8px;"></p>
     <nav class="nav">
       <a href="#cards" class="nav-link active" data-view="cards">카드</a>
@@ -67,7 +68,16 @@
     </section>
   </main>
 
-  <script src="config.js?v=4" defer></script>
-  <script src="app.js?v=4" defer></script>
+  <script src="config.js?v=5" defer></script>
+  <script src="app.js?v=5" defer></script>
+  <script>
+    setTimeout(function() {
+      var s = document.getElementById('initStatus');
+      if (s && s.textContent.indexOf('로딩 중') >= 0) {
+        s.innerHTML = '스크립트가 끝나지 않았습니다. <strong>Ctrl+Shift+R</strong> 강력 새로고침 후 다시 열어 주세요.';
+        s.style.color = '#c00';
+      }
+    }, 4000);
+  </script>
 </body>
 </html>
