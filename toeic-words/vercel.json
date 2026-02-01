@@ -2,11 +2,6 @@
   "framework": null,
   "buildCommand": null,
   "outputDirectory": ".",
-  "rewrites": [
-    { "source": "/toeic-words", "destination": "/" },
-    { "source": "/toeic-words/", "destination": "/" },
-    { "source": "/toeic-words/:path*", "destination": "/:path*" }
-  ],
   "headers": [
     {
       "source": "/(.*)",
