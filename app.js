@@ -112,7 +112,7 @@
       }
       var errEl = document.getElementById('loadError');
       if (errEl) {
-        errEl.textContent = (e && e.message) ? e.message : '';
+        errEl.innerHTML = '데이터를 불러오지 못했습니다.<br><small>' + (e && e.message ? e.message : '') + '</small><br><br>GitHub에 <b>data/words.json</b> 파일이 있는지 확인해 주세요.';
         errEl.style.display = 'block';
       }
     }
@@ -373,7 +373,17 @@
 
   // ——— 초기화 ———
   loadData().then(() => {
-    applyConnectorFilterUI();
-    showView(parseHash());
+    try {
+      applyConnectorFilterUI();
+      showView(parseHash());
+    } catch (e) {
+      console.error('showView error', e);
+      var errEl = document.getElementById('loadError');
+      if (errEl) { errEl.textContent = '화면 표시 오류: ' + (e.message || e); errEl.style.display = 'block'; }
+    }
+  }).catch(function (e) {
+    console.error('loadData error', e);
+    var errEl = document.getElementById('loadError');
+    if (errEl) { errEl.textContent = '로드 오류: ' + (e.message || e); errEl.style.display = 'block'; }
   });
 })();
