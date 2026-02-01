@@ -51,6 +51,8 @@ html, body {
 }
 .view { display: none; }
 .view.active { display: block; }
+/* showView()가 hidden만 제거하므로, hidden 없는 뷰를 보이게 함 */
+.view:not(.hidden) { display: block; }
 .hidden { display: none !important; }
 
 /* 필터 */
