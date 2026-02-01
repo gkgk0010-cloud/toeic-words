@@ -4,15 +4,13 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
-  <meta http-equiv="Pragma" content="no-cache">
-  <meta http-equiv="Expires" content="0">
-  <title>토익 시제부사 · 똑패스</title>
+  <title>연결사(접속부사) · 똑패스</title>
   <link rel="stylesheet" as="style" crossorigin href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css" />
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
   <header class="header">
-    <h1 class="title" id="pageTitle">토익 시제부사</h1>
+    <h1 class="title" id="pageTitle">연결사 로드 중…</h1>
     <p id="loadError" style="display:none; color:#c00; font-size:14px; margin-top:8px;"></p>
     <nav class="nav">
       <a href="#cards" class="nav-link active" data-view="cards">카드</a>
@@ -21,7 +19,6 @@
   </header>
 
   <main class="main">
-    <!-- 카드 뷰 -->
     <section id="view-cards" class="view view-cards">
       <div class="filter">
         <label>시제</label>
@@ -54,7 +51,6 @@
       </div>
     </section>
 
-    <!-- 퀴즈 뷰 (시제 맞추기만) -->
     <section id="view-quiz" class="view view-quiz hidden">
       <p class="quiz-question" id="quizQuestion">이 부사는 어느 시제에 쓰이나요?</p>
       <p class="quiz-word" id="quizWord">—</p>
@@ -67,6 +63,8 @@
     </section>
   </main>
 
+  <!-- 연결사 전용: 이 페이지만 항상 연결사 DB 로드 (URL ?db= 무관) -->
+  <script>window.FORCE_DB_ID = '2fa6e4c35a0e81cda20ac619508bbeea';</script>
   <script src="config.js?v=4" defer></script>
   <script src="app.js?v=4" defer></script>
 </body>

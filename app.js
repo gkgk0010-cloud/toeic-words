@@ -1,6 +1,18 @@
 (function () {
   'use strict';
 
+  // 연결사 전용 페이지(connector.html)면 FORCE_DB_ID 사용, 아니면 URL에서 db 추출
+  var _dbIdFromUrl = '';
+  if (typeof window !== 'undefined' && window.FORCE_DB_ID) {
+    _dbIdFromUrl = String(window.FORCE_DB_ID).trim().replace(/-/g, '');
+  } else {
+    var _href = typeof window !== 'undefined' && window.location && window.location.href ? window.location.href : '';
+    var _search = (typeof window !== 'undefined' && window.location && window.location.search) ? window.location.search : '';
+    if (!_search && _href.indexOf('?') >= 0) { _search = '?' + _href.split('?').slice(1).join('?'); }
+    var _params = _search ? new URLSearchParams(_search) : null;
+    _dbIdFromUrl = (_params && (_params.get('db') || _params.get('database_id'))) ? String(_params.get('db') || _params.get('database_id')).trim().replace(/-/g, '') : '';
+  }
+
   const THEMES = ['현재', '과거', '미래', '현재완료'];
   let allWords = [];
   let filteredWords = [];
@@ -35,23 +47,85 @@
 
   async function loadData() {
     try {
-      // 캐시 완전 무시: JSON 수정 후 새로고침하면 바로 반영
-      const res = await fetch('data/words.json?t=' + Date.now(), { cache: 'no-store' });
-      const data = await res.json();
+      // 스크립트 로드 시 저장한 db 우선 사용, 없으면 현재 URL에서 다시 읽기
+      var search = window.location.search;
+      if (!search && window.location.href.indexOf('?') >= 0) {
+        search = '?' + window.location.href.split('?').slice(1).join('?');
+      }
+      var params = new URLSearchParams(search);
+      var dbId = _dbIdFromUrl || (params.get('db') || params.get('database_id') || '').trim().replace(/-/g, '');
+      let data;
+
+      // URL에 db가 있는데 읽지 못한 경우 — 캐시된 구버전 스크립트일 수 있음
+      if (window.location.href.indexOf('db=') >= 0 && !dbId) {
+        var errEl = document.getElementById('loadError');
+        if (errEl) {
+          errEl.innerHTML = 'URL에 db가 있는데 읽지 못했습니다. <strong>Ctrl+Shift+R</strong>(강력 새로고침) 또는 브라우저 캐시 삭제 후 다시 열어보세요.';
+          errEl.style.display = 'block';
+        }
+        if (document.getElementById('pageTitle')) {
+          document.getElementById('pageTitle').textContent = '캐시 새로고침 필요';
+        }
+        return;
+      }
+
+      if (dbId) {
+        if (document.getElementById('pageTitle')) {
+          document.getElementById('pageTitle').textContent = '로드 중…';
+        }
+        // 노션 DB ID 있으면 API 경유 — 절대 경로로 호출 (캐시/경로 이슈 방지)
+        var origin = window.location.origin || '';
+        if (!origin && window.location.href) {
+          var a = document.createElement('a');
+          a.href = window.location.href;
+          origin = a.origin || (a.protocol + '//' + a.host);
+        }
+        var apiUrl = (origin || '') + '/api/notion-words?database_id=' + encodeURIComponent(dbId) +
+          (params.get('set_title') ? '&set_title=' + encodeURIComponent(params.get('set_title')) : '') +
+          '&t=' + Date.now();
+        const res = await fetch(apiUrl, { cache: 'no-store', method: 'GET' });
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({}));
+          throw new Error(err.error || err.message || res.statusText);
+        }
+        data = await res.json();
+      } else {
+        // 없으면 기존 words.json
+        const res = await fetch('data/words.json?t=' + Date.now(), { cache: 'no-store' });
+        data = await res.json();
+      }
+
       setTitle = data.setTitle || '토익 시제부사';
       allWords = data.words || [];
       applyFilter();
       document.getElementById('pageTitle').textContent = setTitle;
+      var errEl = document.getElementById('loadError');
+      if (errEl) { errEl.style.display = 'none'; errEl.textContent = ''; }
     } catch (e) {
       console.error('Failed to load words:', e);
       allWords = [];
       filteredWords = [];
+      if (document.getElementById('pageTitle')) {
+        document.getElementById('pageTitle').textContent = '데이터 로드 실패';
+      }
+      var errEl = document.getElementById('loadError');
+      if (errEl) {
+        errEl.textContent = (e && e.message) ? e.message : '';
+        errEl.style.display = 'block';
+      }
     }
   }
 
   function applyFilter(resetCardIndex) {
     const theme = ($('#themeFilter') || {}).value || '';
-    filteredWords = theme ? allWords.filter(w => w.theme === theme) : [...allWords];
+    if (!theme) {
+      filteredWords = [...allWords];
+    } else {
+      filteredWords = allWords.filter(function (w) {
+        const themes = (w.themes && w.themes.length) ? w.themes : (w.theme ? [w.theme] : []);
+        return themes.includes(theme);
+      });
+    }
     if (resetCardIndex) cardIndex = 0;
   }
 
