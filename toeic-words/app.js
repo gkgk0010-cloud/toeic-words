@@ -35,16 +35,27 @@
 
   async function loadData() {
     try {
-      const params = new URLSearchParams(window.location.search);
-      const dbId = (params.get('db') || params.get('database_id') || '').trim();
+      // URL에서 db 읽기 (search 비어 있을 때 href에서도 추출 — 캐시/리다이렉트 대비)
+      var search = window.location.search;
+      if (!search && window.location.href.indexOf('?') >= 0) {
+        search = '?' + window.location.href.split('?')[1];
+      }
+      const params = new URLSearchParams(search);
+      const dbId = (params.get('db') || params.get('database_id') || '').trim().replace(/-/g, '');
       let data;
 
       if (dbId) {
-        // 노션 DB ID 있으면 API 경유 (Vercel /api/notion-words)
-        const apiUrl = '/api/notion-words?database_id=' + encodeURIComponent(dbId.replace(/-/g, '')) +
+        // 노션 DB ID 있으면 API 경유 — 절대 경로로 호출 (캐시/경로 이슈 방지)
+        var origin = window.location.origin || '';
+        if (!origin && window.location.href) {
+          var a = document.createElement('a');
+          a.href = window.location.href;
+          origin = a.origin || (a.protocol + '//' + a.host);
+        }
+        var apiUrl = (origin || '') + '/api/notion-words?database_id=' + encodeURIComponent(dbId) +
           (params.get('set_title') ? '&set_title=' + encodeURIComponent(params.get('set_title')) : '') +
           '&t=' + Date.now();
-        const res = await fetch(apiUrl, { cache: 'no-store' });
+        const res = await fetch(apiUrl, { cache: 'no-store', method: 'GET' });
         if (!res.ok) {
           const err = await res.json().catch(() => ({}));
           throw new Error(err.error || err.message || res.statusText);
@@ -60,12 +71,19 @@
       allWords = data.words || [];
       applyFilter();
       document.getElementById('pageTitle').textContent = setTitle;
+      var errEl = document.getElementById('loadError');
+      if (errEl) { errEl.style.display = 'none'; errEl.textContent = ''; }
     } catch (e) {
       console.error('Failed to load words:', e);
       allWords = [];
       filteredWords = [];
       if (document.getElementById('pageTitle')) {
         document.getElementById('pageTitle').textContent = '데이터 로드 실패';
+      }
+      var errEl = document.getElementById('loadError');
+      if (errEl) {
+        errEl.textContent = (e && e.message) ? e.message : '';
+        errEl.style.display = 'block';
       }
     }
   }
