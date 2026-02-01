@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+  <meta http-equiv="Pragma" content="no-cache">
+  <meta http-equiv="Expires" content="0">
+  <title>토익 시제부사 · 똑패스</title>
+  <link rel="stylesheet" as="style" crossorigin href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css" />
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="header">
+    <h1 class="title" id="pageTitle">토익 시제부사</h1>
+    <p id="loadError" style="display:none; color:#c00; font-size:14px; margin-top:8px;"></p>
+    <nav class="nav">
+      <a href="#cards" class="nav-link active" data-view="cards">카드</a>
+      <a href="#quiz" class="nav-link" data-view="quiz">퀴즈</a>
+    </nav>
+  </header>
+
+  <main class="main">
+    <!-- 카드 뷰 -->
+    <section id="view-cards" class="view view-cards">
+      <div class="filter">
+        <label>시제</label>
+        <select id="themeFilter">
+          <option value="">전체</option>
+          <option value="현재">현재</option>
+          <option value="과거">과거</option>
+          <option value="미래">미래</option>
+          <option value="현재완료">현재완료</option>
+        </select>
+      </div>
+      <div class="card-wrap">
+        <div class="card" id="card">
+          <div class="card-face card-front">
+            <span class="card-theme-badge" id="cardThemeBadge">—</span>
+            <p class="card-keyword" id="cardKeyword">—</p>
+            <p class="card-hint">탭하면 뒤집기</p>
+          </div>
+          <div class="card-face card-back">
+            <p class="card-meaning" id="cardMeaning">—</p>
+            <p class="card-example" id="cardExample">—</p>
+            <p class="card-theme-line" id="cardThemeLine">—</p>
+          </div>
+        </div>
+      </div>
+      <div class="card-nav">
+        <button type="button" class="btn btn-prev" id="cardPrev">이전</button>
+        <span class="card-index" id="cardIndex">0 / 0</span>
+        <button type="button" class="btn btn-next" id="cardNext">다음</button>
+      </div>
+    </section>
+
+    <!-- 퀴즈 뷰 (시제 맞추기만) -->
+    <section id="view-quiz" class="view view-quiz hidden">
+      <p class="quiz-question" id="quizQuestion">이 부사는 어느 시제에 쓰이나요?</p>
+      <p class="quiz-word" id="quizWord">—</p>
+      <ul class="quiz-choices" id="quizChoices"></ul>
+      <div class="quiz-feedback hidden" id="quizFeedback"></div>
+      <div class="quiz-nav">
+        <span class="quiz-score" id="quizScore">0 / 0</span>
+        <button type="button" class="btn btn-next-quiz" id="quizNext">다음</button>
+      </div>
+    </section>
+  </main>
+
+  <script src="config.js?v=4" defer></script>
+  <script src="app.js?v=4" defer></script>
+</body>
+</html>
