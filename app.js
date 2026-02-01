@@ -14,8 +14,10 @@
   }
 
   const THEMES = ['현재', '과거', '미래', '현재완료'];
+  const isConnectorPage = !!(typeof window !== 'undefined' && window.FORCE_DB_ID);
   let allWords = [];
   let filteredWords = [];
+  let quizWordOrder = []; // 퀴즈 시 매번 셔플된 순서
   let setTitle = '';
   let cardIndex = 0;
   let quizIndex = 0;
@@ -161,7 +163,7 @@
     $('#cardExample').textContent = word.example;
     const themesLabel = getCorrectThemes(word).join(', ');
     $('#cardThemeBadge').textContent = themesLabel || '—';
-    $('#cardThemeLine').textContent = (themesLabel || '—') + ' 시제에 씁니다';
+    $('#cardThemeLine').textContent = (themesLabel || '—') + (isConnectorPage ? ' 카테고리에 씁니다' : ' 시제에 씁니다');
     $('#cardIndex').textContent = (cardIndex + 1) + ' / ' + list.length;
     $('#cardPrev').disabled = cardIndex <= 0;
     $('#cardNext').disabled = cardIndex >= list.length - 1;
@@ -222,31 +224,55 @@
     return shuffle(choices);
   }
 
+  /** 연결사: 데이터에서 나온 카테고리 목록 (중복 제거) */
+  function getUniqueCategories() {
+    return [...new Set(filteredWords.flatMap(function (w) { return getCorrectThemes(w); }))].filter(Boolean).sort();
+  }
+
+  function pickCategoryChoices(primary, allCats, count) {
+    if (!allCats.length) return [];
+    if (allCats.length <= count) return shuffle([...allCats]);
+    const others = allCats.filter(function (c) { return c !== primary; });
+    const shuffled = shuffle(others);
+    const choices = [primary].concat(shuffled.slice(0, count - 1));
+    return shuffle(choices);
+  }
+
   function startQuiz() {
     applyFilter(true);
+    quizWordOrder = shuffle([...filteredWords]);
     quizIndex = 0;
     quizScore = { correct: 0, total: 0 };
     nextQuiz();
   }
 
   function nextQuiz() {
-    if (filteredWords.length < 1) {
+    if (quizWordOrder.length < 1) {
       $('#quizWord').textContent = '단어가 필요합니다.';
       $('#quizChoices').innerHTML = '';
       $('#quizScore').textContent = '0 / 0';
       return;
     }
-    if (quizIndex >= filteredWords.length) {
+    if (quizIndex >= quizWordOrder.length) {
       startQuiz();
       return;
     }
-    currentQuizWord = filteredWords[quizIndex];
+    currentQuizWord = quizWordOrder[quizIndex];
     quizAnswered = false;
     const correctThemes = getCorrectThemes(currentQuizWord);
     const primaryTheme = correctThemes[0];
-    const choices = pickThemeChoices(primaryTheme, 4);
+    let choices;
+    let questionText;
+    if (isConnectorPage) {
+      const allCats = getUniqueCategories();
+      choices = pickCategoryChoices(primaryTheme, allCats, 4);
+      questionText = '이 연결사는 어떤 카테고리에 쓰이나요?';
+    } else {
+      choices = pickThemeChoices(primaryTheme, 4);
+      questionText = '이 부사는 어느 시제에 쓰이나요?';
+    }
     $('#quizWord').textContent = currentQuizWord.keyword;
-    $('#quizQuestion').textContent = '이 부사는 어느 시제에 쓰이나요?';
+    $('#quizQuestion').textContent = questionText;
     $('#quizChoices').innerHTML = choices.map((t) =>
       '<li data-theme="' + (t || '').replace(/"/g, '&quot;') + '">' + (t || '') + '</li>'
     ).join('');
@@ -295,7 +321,7 @@
     const theme = li.getAttribute('data-theme');
     const correctThemes = getCorrectThemes(currentQuizWord);
     const correct = correctThemes.includes(theme);
-    const correctLabel = correctThemes.join(', ') + ' 시제';
+    const correctLabel = correctThemes.join(', ') + (isConnectorPage ? ' 카테고리' : ' 시제');
     quizAnswered = true;
     quizScore.total++;
     if (correct) quizScore.correct++;
@@ -316,24 +342,38 @@
     logAnswer(correct);
   }
 
-  $('#quizNext')?.addEventListener('click', () => {
-    if (quizAnswered && quizIndex < filteredWords.length - 1) {
+    $('#quizNext')?.addEventListener('click', () => {
+    if (quizAnswered && quizIndex < quizWordOrder.length - 1) {
       quizIndex++;
       nextQuiz();
-    } else if (quizAnswered && quizIndex >= filteredWords.length - 1) {
+    } else if (quizAnswered && quizIndex >= quizWordOrder.length - 1) {
       const fb = $('#quizFeedback');
       fb.classList.remove('hidden');
       fb.classList.add('correct');
       fb.textContent = '퀴즈 끝! ' + quizScore.correct + ' / ' + quizScore.total + ' 맞음';
       $('#quizChoices').innerHTML = '';
       quizIndex++;
-    } else if (quizIndex >= filteredWords.length) {
+    } else if (quizIndex >= quizWordOrder.length) {
       startQuiz();
     }
   });
 
+  /** 연결사 페이지: 필터 라벨·옵션을 카테고리로 변경 */
+  function applyConnectorFilterUI() {
+    if (!isConnectorPage || !allWords.length) return;
+    const cats = [...new Set(allWords.flatMap(function (w) { return getCorrectThemes(w); }))].filter(Boolean).sort();
+    const labelEl = document.querySelector('.filter label');
+    if (labelEl) labelEl.textContent = '카테고리';
+    const sel = document.getElementById('themeFilter');
+    if (!sel) return;
+    sel.innerHTML = '<option value="">전체</option>' + cats.map(function (c) {
+      return '<option value="' + String(c).replace(/"/g, '&quot;') + '">' + String(c) + '</option>';
+    }).join('');
+  }
+
   // ——— 초기화 ———
   loadData().then(() => {
+    applyConnectorFilterUI();
     showView(parseHash());
   });
 })();
