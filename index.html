@@ -12,7 +12,10 @@
 </head>
 <body>
   <header class="header">
-    <h1 class="title" id="pageTitle">토익 시제부사</h1>
+    <div style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:8px;">
+      <h1 class="title" id="pageTitle" style="margin:0;">토익 시제부사</h1>
+      <button type="button" id="btn-exit-quiz" class="btn-exit" style="display:none;" title="홈화면으로">나가기</button>
+    </div>
     <p id="initStatus" style="margin:8px 0; color:#666; font-size:14px;">로딩 중…</p>
     <p id="loadError" style="display:none; color:#c00; font-size:14px; margin-top:8px;"></p>
     <nav class="nav">
@@ -57,6 +60,7 @@
 
     <!-- 퀴즈 뷰 (시제 맞추기만) -->
     <section id="view-quiz" class="view view-quiz hidden">
+      <p class="quiz-progress-line" id="quizProgressLine" style="margin-bottom:12px; font-size:15px; font-weight:600; color:#4b5563;">0 / 0 문제</p>
       <p class="quiz-question" id="quizQuestion">이 부사는 어느 시제에 쓰이나요?</p>
       <p class="quiz-word" id="quizWord">—</p>
       <ul class="quiz-choices" id="quizChoices"></ul>

@@ -43,6 +43,22 @@ html, body {
   color: #6a11cb;
 }
 
+.btn-exit {
+  padding: 8px 14px;
+  font-size: 14px;
+  font-weight: 600;
+  color: #6b7280;
+  background: rgba(255,255,255,0.9);
+  border: 1px solid rgba(106, 17, 203, 0.2);
+  border-radius: 10px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.btn-exit:hover {
+  background: rgba(106, 17, 203, 0.08);
+  color: #6a11cb;
+}
+
 /* 메인: 여백만 */
 .main {
   padding: 16px;

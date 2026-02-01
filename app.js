@@ -36,6 +36,8 @@
     const link = $('[data-view="' + name + '"]');
     if (view) view.classList.remove('hidden');
     if (link) link.classList.add('active');
+    const exitBtn = document.getElementById('btn-exit-quiz');
+    if (exitBtn) exitBtn.style.display = (name === 'quiz') ? 'inline-block' : 'none';
     if (name === 'cards') renderCard();
     if (name === 'quiz') startQuiz();
   }
@@ -252,7 +254,9 @@
   }
 
   function nextQuiz() {
+    const progressEl = document.getElementById('quizProgressLine');
     if (quizWordOrder.length < 1) {
+      if (progressEl) progressEl.textContent = '0 / 0 문제';
       $('#quizWord').textContent = '단어가 필요합니다.';
       $('#quizChoices').innerHTML = '';
       $('#quizScore').textContent = '0 / 0';
@@ -262,6 +266,7 @@
       startQuiz();
       return;
     }
+    if (progressEl) progressEl.textContent = (quizIndex + 1) + ' / ' + quizWordOrder.length + ' 문제';
     currentQuizWord = quizWordOrder[quizIndex];
     quizAnswered = false;
     const correctThemes = getCorrectThemes(currentQuizWord);
@@ -380,6 +385,14 @@
     var s = document.getElementById('initStatus');
     if (s) s.style.display = 'none';
   }
+
+  // 나가기: 똑패스에서 연 창이면 닫고, 아니면 그냥 닫기 시도
+  document.getElementById('btn-exit-quiz')?.addEventListener('click', function () {
+    if (window.opener) {
+      try { window.opener.focus(); } catch (e) {}
+    }
+    window.close();
+  });
 
   // ——— 초기화 ———
   loadData().then(() => {
