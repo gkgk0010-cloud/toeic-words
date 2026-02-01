@@ -1,6 +1,13 @@
 (function () {
   'use strict';
 
+  // 페이지 로드 직후 URL에서 db 한 번만 추출 (캐시/타이밍 이슈 방지)
+  var _href = typeof window !== 'undefined' && window.location && window.location.href ? window.location.href : '';
+  var _search = (typeof window !== 'undefined' && window.location && window.location.search) ? window.location.search : '';
+  if (!_search && _href.indexOf('?') >= 0) { _search = '?' + _href.split('?').slice(1).join('?'); }
+  var _params = _search ? new URLSearchParams(_search) : null;
+  var _dbIdFromUrl = (_params && (_params.get('db') || _params.get('database_id'))) ? String(_params.get('db') || _params.get('database_id')).trim().replace(/-/g, '') : '';
+
   const THEMES = ['현재', '과거', '미래', '현재완료'];
   let allWords = [];
   let filteredWords = [];
@@ -35,16 +42,32 @@
 
   async function loadData() {
     try {
-      // URL에서 db 읽기 (search 비어 있을 때 href에서도 추출 — 캐시/리다이렉트 대비)
+      // 스크립트 로드 시 저장한 db 우선 사용, 없으면 현재 URL에서 다시 읽기
       var search = window.location.search;
       if (!search && window.location.href.indexOf('?') >= 0) {
-        search = '?' + window.location.href.split('?')[1];
+        search = '?' + window.location.href.split('?').slice(1).join('?');
       }
-      const params = new URLSearchParams(search);
-      const dbId = (params.get('db') || params.get('database_id') || '').trim().replace(/-/g, '');
+      var params = new URLSearchParams(search);
+      var dbId = _dbIdFromUrl || (params.get('db') || params.get('database_id') || '').trim().replace(/-/g, '');
       let data;
 
+      // URL에 db가 있는데 읽지 못한 경우 — 캐시된 구버전 스크립트일 수 있음
+      if (window.location.href.indexOf('db=') >= 0 && !dbId) {
+        var errEl = document.getElementById('loadError');
+        if (errEl) {
+          errEl.innerHTML = 'URL에 db가 있는데 읽지 못했습니다. <strong>Ctrl+Shift+R</strong>(강력 새로고침) 또는 브라우저 캐시 삭제 후 다시 열어보세요.';
+          errEl.style.display = 'block';
+        }
+        if (document.getElementById('pageTitle')) {
+          document.getElementById('pageTitle').textContent = '캐시 새로고침 필요';
+        }
+        return;
+      }
+
       if (dbId) {
+        if (document.getElementById('pageTitle')) {
+          document.getElementById('pageTitle').textContent = '로드 중…';
+        }
         // 노션 DB ID 있으면 API 경유 — 절대 경로로 호출 (캐시/경로 이슈 방지)
         var origin = window.location.origin || '';
         if (!origin && window.location.href) {
