@@ -177,6 +177,38 @@ html, body {
 }
 .quiz-choices li {
   margin-bottom: 12px;
+  display: block;
+  width: 100%;
+  padding: 18px 20px;
+  font-size: 1.05rem;
+  font-weight: 600;
+  text-align: left;
+  border-radius: 14px;
+  border: 1px solid rgba(106, 17, 203, 0.2);
+  background: rgba(255,255,255,0.95);
+  color: #374151;
+  cursor: pointer;
+  min-height: 52px;
+  -webkit-tap-highlight-color: transparent;
+  transition: background 0.2s, border-color 0.2s;
+  box-sizing: border-box;
+}
+.quiz-choices li:hover,
+.quiz-choices li:active {
+  background: rgba(106, 17, 203, 0.08);
+  border-color: rgba(106, 17, 203, 0.3);
+}
+.quiz-choices li.disabled {
+  cursor: default;
+  opacity: 0.9;
+}
+.quiz-choices li.correct {
+  background: rgba(34, 197, 94, 0.15);
+  border-color: rgba(34, 197, 94, 0.4);
+}
+.quiz-choices li.wrong {
+  background: rgba(239, 68, 68, 0.1);
+  border-color: rgba(239, 68, 68, 0.3);
 }
 .quiz-choices .btn,
 .quiz-choices button {
