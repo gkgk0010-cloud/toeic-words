@@ -230,12 +230,12 @@
   }
 
   function pickCategoryChoices(primary, allCats, count) {
-    if (!allCats.length) return [];
-    if (allCats.length <= count) return shuffle([...allCats]);
-    const others = allCats.filter(function (c) { return c !== primary; });
-    const shuffled = shuffle(others);
-    const choices = [primary].concat(shuffled.slice(0, count - 1));
-    return shuffle(choices);
+    if (!allCats.length || !primary) return [];
+    var others = allCats.filter(function (c) { return c !== primary; });
+    var shuffled = shuffle(others);
+    var choices = [primary].concat(shuffled.slice(0, count - 1));
+    while (choices.length < count) { choices.push(primary); }
+    return shuffle(choices.slice(0, count));
   }
 
   function startQuiz() {
