@@ -1,0 +1,192 @@
+/* 똑패스 디자인과 통일 (폰트·색·배경·글래스) */
+:root {
+  --primary: #5b7cfa;
+  --primary-dark: #4a6ae8;
+  --primary-gradient: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  --primary-btn: linear-gradient(to right, #6a11cb 0%, #2575fc 100%);
+  --success: #34a853;
+  --danger: #ea4335;
+  --text: #3d405b;
+  --text-dark: #374151;
+  --glass-bg: rgba(255, 255, 255, 0.7);
+  --glass-border: rgba(255, 255, 255, 0.5);
+  --glass-shadow: 0 8px 32px rgba(31, 38, 135, 0.05);
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  min-height: 100vh;
+  font-family: "Pretendard Variable", Pretendard, -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+  color: var(--text-dark);
+  font-weight: 400;
+  background: linear-gradient(180deg, #f3e7ff 0%, #eef2ff 100%);
+  background-attachment: fixed;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* 헤더: 똑패스처럼 투명·라이트 */
+.header {
+  padding: 15px 20px;
+  background: transparent;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-shrink: 0;
+}
+.title { font-size: 1.15rem; font-weight: 700; color: var(--text-dark); }
+.nav { display: flex; gap: 0.5rem; }
+.nav-link {
+  color: var(--text);
+  text-decoration: none;
+  padding: 0.5rem 1rem;
+  border-radius: 16px;
+  font-weight: 600;
+  font-size: 0.95rem;
+  background: var(--glass-bg);
+  border: 1px solid var(--glass-border);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+.nav-link:hover { color: var(--primary-dark); border-color: var(--primary); }
+.nav-link.active {
+  background: var(--primary-btn);
+  color: #fff;
+  border: none;
+  box-shadow: 0 4px 16px rgba(106, 17, 203, 0.25);
+}
+
+/* 메인: 똑패스와 동일 max-width·글래스 */
+.main {
+  max-width: 500px;
+  margin: 0 auto;
+  padding: 1rem 1.25rem;
+  flex: 1;
+}
+.view { display: block; }
+.view.hidden { display: none; }
+
+/* 필터: 똑패스 tag-select 느낌 */
+.filter { margin-bottom: 1rem; }
+.filter label { font-weight: 600; color: var(--text-dark); margin-right: 0.5rem; font-size: 0.95rem; }
+.filter select {
+  padding: 12px 16px;
+  border-radius: 16px;
+  border: 1px solid var(--glass-border);
+  font-size: 1rem;
+  font-weight: 600;
+  background: var(--glass-bg);
+  backdrop-filter: blur(8px);
+  color: var(--text-dark);
+  box-shadow: var(--glass-shadow);
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+/* 카드: 앞면은 똑패스 primary 그라데이션 */
+.card-wrap { perspective: 1000px; margin: 1.5rem 0; }
+.card {
+  position: relative;
+  width: 100%;
+  min-height: 200px;
+  transform-style: preserve-3d;
+  cursor: pointer;
+  transition: transform 0.4s;
+}
+.card.flipped { transform: rotateY(180deg); }
+.card-face {
+  position: absolute;
+  width: 100%;
+  min-height: 200px;
+  backface-visibility: hidden;
+  border-radius: 24px;
+  padding: 1.5rem;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  text-align: center;
+  border: 1px solid var(--glass-border);
+  box-shadow: var(--glass-shadow);
+}
+.card-front {
+  background: var(--primary-btn);
+  color: #fff;
+  box-shadow: 0 12px 40px rgba(106, 17, 203, 0.25);
+}
+.card-back {
+  background: var(--glass-bg);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  color: var(--text-dark);
+  transform: rotateY(180deg);
+  border: 1px solid var(--glass-border);
+}
+.card-theme-badge {
+  position: absolute;
+  top: 0.75rem;
+  right: 0.75rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  padding: 0.3rem 0.6rem;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.25);
+  color: #fff;
+}
+.card-keyword { font-size: 1.4rem; font-weight: 700; margin: 0 0 0.5rem; }
+.card-hint { font-size: 0.85rem; opacity: 0.9; font-weight: 500; }
+.card-meaning { font-size: 1.1rem; font-weight: 600; margin: 0 0 0.75rem; color: var(--text-dark); }
+.card-example { font-size: 0.95rem; color: var(--text); margin: 0 0 0.5rem; line-height: 1.5; }
+.card-theme-line { font-size: 0.9rem; font-weight: 600; color: var(--text-dark); margin: 0; }
+.card-theme-line::before { content: '→ '; }
+
+.card-nav { display: flex; align-items: center; justify-content: center; gap: 1rem; margin-top: 1.25rem; }
+.card-index { font-size: 0.95rem; font-weight: 600; color: var(--text); }
+
+/* 버튼: 똑패스 card-btn 느낌 */
+.btn {
+  padding: 12px 24px;
+  border-radius: 16px;
+  border: none;
+  cursor: pointer;
+  font-size: 1rem;
+  font-weight: 600;
+  font-family: inherit;
+  background: var(--primary-btn);
+  color: #fff;
+  box-shadow: 0 4px 16px rgba(106, 17, 203, 0.2);
+  transition: transform 0.2s, box-shadow 0.2s;
+}
+.btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 24px rgba(106, 17, 203, 0.3);
+}
+.btn:active { transform: translateY(0); }
+.btn:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
+
+/* 퀴즈 */
+.view-quiz .quiz-question { color: var(--text); font-weight: 600; margin-bottom: 0.5rem; font-size: 0.95rem; }
+.view-quiz .quiz-word { font-size: 1.35rem; font-weight: 700; margin: 0 0 1rem; color: var(--text-dark); }
+.quiz-choices { list-style: none; padding: 0; margin: 0 0 1rem; }
+.quiz-choices li {
+  padding: 1rem 1.25rem;
+  margin-bottom: 0.6rem;
+  background: var(--glass-bg);
+  backdrop-filter: blur(8px);
+  border: 1px solid var(--glass-border);
+  border-radius: 16px;
+  cursor: pointer;
+  font-weight: 600;
+  color: var(--text-dark);
+  transition: border-color 0.2s, background 0.2s;
+  box-shadow: var(--glass-shadow);
+}
+.quiz-choices li:hover { border-color: var(--primary); background: rgba(91, 124, 250, 0.08); }
+.quiz-choices li.correct { border-color: var(--success); background: rgba(52, 168, 83, 0.12); color: #166534; }
+.quiz-choices li.wrong { border-color: var(--danger); background: rgba(234, 67, 53, 0.1); color: #b91c1c; }
+.quiz-choices li.disabled { pointer-events: none; opacity: 0.8; }
+
+.quiz-feedback { margin-bottom: 1rem; padding: 0.9rem 1rem; border-radius: 16px; font-weight: 600; font-size: 1rem; }
+.quiz-feedback.correct { background: rgba(52, 168, 83, 0.15); color: #166534; border: 1px solid rgba(52, 168, 83, 0.3); }
+.quiz-feedback.wrong { background: rgba(234, 67, 53, 0.1); color: #b91c1c; border: 1px solid rgba(234, 67, 53, 0.3); }
+.quiz-nav { display: flex; justify-content: space-between; align-items: center; }
+.quiz-score { font-size: 0.95rem; font-weight: 600; color: var(--text); }
