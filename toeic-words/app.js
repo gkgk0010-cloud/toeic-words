@@ -1,12 +1,17 @@
 (function () {
   'use strict';
 
-  // 페이지 로드 직후 URL에서 db 한 번만 추출 (캐시/타이밍 이슈 방지)
-  var _href = typeof window !== 'undefined' && window.location && window.location.href ? window.location.href : '';
-  var _search = (typeof window !== 'undefined' && window.location && window.location.search) ? window.location.search : '';
-  if (!_search && _href.indexOf('?') >= 0) { _search = '?' + _href.split('?').slice(1).join('?'); }
-  var _params = _search ? new URLSearchParams(_search) : null;
-  var _dbIdFromUrl = (_params && (_params.get('db') || _params.get('database_id'))) ? String(_params.get('db') || _params.get('database_id')).trim().replace(/-/g, '') : '';
+  // 연결사 전용 페이지(connector.html)면 FORCE_DB_ID 사용, 아니면 URL에서 db 추출
+  var _dbIdFromUrl = '';
+  if (typeof window !== 'undefined' && window.FORCE_DB_ID) {
+    _dbIdFromUrl = String(window.FORCE_DB_ID).trim().replace(/-/g, '');
+  } else {
+    var _href = typeof window !== 'undefined' && window.location && window.location.href ? window.location.href : '';
+    var _search = (typeof window !== 'undefined' && window.location && window.location.search) ? window.location.search : '';
+    if (!_search && _href.indexOf('?') >= 0) { _search = '?' + _href.split('?').slice(1).join('?'); }
+    var _params = _search ? new URLSearchParams(_search) : null;
+    _dbIdFromUrl = (_params && (_params.get('db') || _params.get('database_id'))) ? String(_params.get('db') || _params.get('database_id')).trim().replace(/-/g, '') : '';
+  }
 
   const THEMES = ['현재', '과거', '미래', '현재완료'];
   let allWords = [];
