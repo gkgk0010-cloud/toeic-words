@@ -49,9 +49,10 @@
 
   window.addEventListener('hashchange', () => showView(parseHash()));
 
+  var CACHE_TTL_MS = 10 * 60 * 1000; // 10분
+
   async function loadData() {
     try {
-      // 스크립트 로드 시 저장한 db 우선 사용, 없으면 현재 URL에서 다시 읽기
       var search = window.location.search;
       if (!search && window.location.href.indexOf('?') >= 0) {
         search = '?' + window.location.href.split('?').slice(1).join('?');
@@ -60,7 +61,6 @@
       var dbId = _dbIdFromUrl || (params.get('db') || params.get('database_id') || '').trim().replace(/-/g, '');
       let data;
 
-      // URL에 db가 있는데 읽지 못한 경우 — 캐시된 구버전 스크립트일 수 있음
       if (window.location.href.indexOf('db=') >= 0 && !dbId) {
         var errEl = document.getElementById('loadError');
         if (errEl) {
@@ -74,25 +74,74 @@
       }
 
       if (dbId) {
-        if (document.getElementById('pageTitle')) {
-          document.getElementById('pageTitle').textContent = '로드 중…';
+        // 연결사: 시제부사처럼 로컬 JSON 먼저 로드 (바로 나오게)
+        if (isConnectorPage) {
+          try {
+            var staticRes = await fetch('data/connector-words.json?t=' + Date.now(), { cache: 'no-store' });
+            if (staticRes.ok) {
+              var localData = await staticRes.json();
+              if (localData.words && localData.words.length > 0) {
+                data = { setTitle: localData.setTitle || '연결사(접속부사)', words: localData.words };
+              }
+            }
+          } catch (e) {}
         }
-        // 노션 DB ID 있으면 API 경유 (Vercel 루트 = toeic-words 폴더면 /api/ 가 루트에 있음)
-        var origin = window.location.origin || '';
-        if (!origin && window.location.href) {
-          var a = document.createElement('a');
-          a.href = window.location.href;
-          origin = a.origin || (a.protocol + '//' + a.host);
+
+        if (!data) {
+          var cacheKey = 'words_cache_' + dbId;
+          var useCache = false;
+          try {
+            var raw = sessionStorage.getItem(cacheKey);
+            if (raw) {
+              var cached = JSON.parse(raw);
+              var age = Date.now() - (cached.ts || 0);
+              if (age < CACHE_TTL_MS && cached.words && cached.words.length > 0) {
+                data = { setTitle: cached.setTitle || '', words: cached.words };
+                useCache = true;
+              }
+            }
+          } catch (e) {}
+
+          if (!useCache) {
+          if (document.getElementById('pageTitle')) {
+            document.getElementById('pageTitle').textContent = isConnectorPage ? '연결사 로드 중…' : '로드 중…';
+          }
+          var origin = window.location.origin || '';
+          if (!origin && window.location.href) {
+            var a = document.createElement('a');
+            a.href = window.location.href;
+            origin = a.origin || (a.protocol + '//' + a.host);
+          }
+          var pathname = (window.location && window.location.pathname) || '';
+          var pathParts = pathname.split('/').filter(Boolean);
+          var basePath = '';
+          if (pathParts.length > 1) {
+            pathParts.pop();
+            basePath = '/' + pathParts.join('/');
+          }
+          var apiUrl = (origin || '') + basePath + '/api/notion-words?database_id=' + encodeURIComponent(dbId) +
+            (params.get('set_title') ? '&set_title=' + encodeURIComponent(params.get('set_title')) : '') +
+            '&t=' + Date.now();
+          var res = await fetch(apiUrl, { cache: 'no-store', method: 'GET' });
+          if (!res.ok && basePath && res.status === 404) {
+            res = await fetch((origin || '') + '/api/notion-words?database_id=' + encodeURIComponent(dbId) +
+              (params.get('set_title') ? '&set_title=' + encodeURIComponent(params.get('set_title')) : '') +
+              '&t=' + Date.now(), { cache: 'no-store', method: 'GET' });
+          }
+          if (!res.ok) {
+            const err = await res.json().catch(() => ({}));
+            throw new Error(err.error || err.message || res.statusText);
+          }
+          data = await res.json();
+          try {
+            sessionStorage.setItem(cacheKey, JSON.stringify({
+              setTitle: data.setTitle || '',
+              words: data.words || [],
+              ts: Date.now()
+            }));
+          } catch (e) {}
+          }
         }
-        var apiUrl = (origin || '') + '/api/notion-words?database_id=' + encodeURIComponent(dbId) +
-          (params.get('set_title') ? '&set_title=' + encodeURIComponent(params.get('set_title')) : '') +
-          '&t=' + Date.now();
-        const res = await fetch(apiUrl, { cache: 'no-store', method: 'GET' });
-        if (!res.ok) {
-          const err = await res.json().catch(() => ({}));
-          throw new Error(err.error || err.message || res.statusText);
-        }
-        data = await res.json();
       } else {
         // 없으면 기존 words.json
         const res = await fetch('data/words.json?t=' + Date.now(), { cache: 'no-store' });
@@ -108,7 +157,12 @@
       var initEl = document.getElementById('initStatus');
       if (initEl) initEl.style.display = 'none';
       if (allWords.length === 0) {
-        if (errEl) { errEl.textContent = '단어가 0개입니다. data/words.json을 확인해 주세요.'; errEl.style.display = 'block'; }
+        if (errEl) {
+          errEl.textContent = isConnectorPage
+            ? '연결사 단어가 없습니다. 노션 DB(연결사)가 비어 있거나, 속성 이름이 키워드/뜻·예문·카테고리인지 확인해 주세요.'
+            : '단어가 0개입니다. data/words.json을 확인해 주세요.';
+          errEl.style.display = 'block';
+        }
       }
     } catch (e) {
       console.error('Failed to load words:', e);
@@ -119,7 +173,9 @@
       }
       var errEl = document.getElementById('loadError');
       if (errEl) {
-        errEl.innerHTML = '데이터를 불러오지 못했습니다.<br><small>' + (e && e.message ? e.message : '') + '</small><br><br>GitHub에 <b>data/words.json</b> 파일이 있는지 확인해 주세요.';
+        errEl.innerHTML = isConnectorPage
+          ? '연결사 데이터를 불러오지 못했습니다.<br><small>' + (e && e.message ? e.message : '') + '</small><br><br>노션 DB(연결사) 연결·<b>NOTION_API_KEY</b>·Vercel 환경 변수를 확인해 주세요.'
+          : '데이터를 불러오지 못했습니다.<br><small>' + (e && e.message ? e.message : '') + '</small><br><br>GitHub에 <b>data/words.json</b> 파일이 있는지 확인해 주세요.';
         errEl.style.display = 'block';
       }
     }
@@ -259,7 +315,9 @@
     const progressEl = document.getElementById('quizProgressLine');
     if (quizWordOrder.length < 1) {
       if (progressEl) progressEl.textContent = '0 / 0 문제';
-      $('#quizWord').textContent = '단어가 필요합니다.';
+      $('#quizWord').textContent = isConnectorPage
+        ? '연결사 단어가 없습니다. 카드 탭에서 데이터가 로드됐는지 확인하거나, 노션 DB(연결사)를 확인해 주세요.'
+        : '단어가 필요합니다.';
       $('#quizChoices').innerHTML = '';
       $('#quizScore').textContent = '0 / 0';
       return;
