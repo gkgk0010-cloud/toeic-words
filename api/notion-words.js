@@ -81,14 +81,18 @@ module.exports = async function handler(req, res) {
 
     // 인칭대명사: 단어=앞면, 뜻=뒷면. 격=퀴즈·카드, 분류=필터. 소유대명사·재귀대명사 포함.
     // 표가 "한 행에 주격·목적격·소유격·소유대명사·재귀대명사 컬럼"이면 격별로 펼쳐서 전부 반영.
-    const CASE_COLUMN_NAMES = ['주격', '목적격', '소유격', '소유대명사', '재귀대명사'];
+    const CASE_COLUMN_NAMES = ['주격', '목적격', '소유격', '소유대명사', '소유 대명사', '재귀대명사'];
     const caseColumnIds = {};
     for (const [id, def] of Object.entries(schema)) {
       const name = (def && def.name) ? String(def.name).trim() : '';
       if (CASE_COLUMN_NAMES.includes(name)) caseColumnIds[name] = id;
     }
+    /** 노션 컬럼명 "소유 대명사" → 앱에서는 "소유대명사"로 통일 */
+    function normalizeCaseName(name) {
+      return (name === '소유 대명사') ? '소유대명사' : (name || '');
+    }
     const useWideTable = Object.keys(caseColumnIds).length >= 2;
-    const categoryId = findPropIdByOrder(schema, ['분류', '종류', '인칭', '구분']);
+    const categoryId = findPropIdByOrder(schema, ['구분', '분류', '종류', '인칭', '인칭/수']);
 
     const keyId = useWideTable ? null : findPropIdByOrder(schema, ['키워드', 'keyword', 'Keyword', 'Name', '단어', '주격', '목적격', '소유격', '이름', '제목', '구분']);
     const meaningId = findPropIdByOrder(schema, ['뜻/설명', '뜻', 'meaning', 'Meaning', '구분', '분류', '주격', '소유격', '목적격']);
@@ -134,13 +138,14 @@ module.exports = async function handler(req, res) {
         const categoryVal = categoryId ? getPropPlain(page, categoryId) : '';
         for (const [caseName, propId] of Object.entries(caseColumnIds)) {
           const keyword = getPropPlain(page, propId);
-          if (!keyword) continue;
+          if (!keyword || (keyword.trim() === '-' || keyword.trim() === '')) continue;
+          const themeVal = normalizeCaseName(caseName);
           words.push({
             keyword,
-            meaning: caseName,
+            meaning: themeVal,
             example: '',
-            theme: caseName,
-            category: categoryVal || caseName
+            theme: themeVal,
+            category: categoryVal || themeVal
           });
         }
       }

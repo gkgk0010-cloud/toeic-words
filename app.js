@@ -287,9 +287,9 @@
     $('#cardMeaning').textContent = word.meaning;
     $('#cardExample').textContent = word.example;
     const themesLabel = getCorrectThemes(word).join(', ');
-    // 카드: 격 퀴즈일 때 뱃지는 1인칭 단수·2인칭 복수 등 분류로 구별
-    if (themeLabel === '격' && word.category) {
-      $('#cardThemeBadge').textContent = word.category;
+    // 카드: 격 퀴즈일 때 뱃지는 1인칭 단수·2인칭 복수 등 분류로 구별 (분류 없으면 격 표시)
+    if (themeLabel === '격') {
+      $('#cardThemeBadge').textContent = (word.category && String(word.category).trim()) || themesLabel || '—';
     } else {
       $('#cardThemeBadge').textContent = themesLabel || '—';
     }
@@ -502,15 +502,20 @@
     }
   });
 
-  /** 데이터 로드 후: 필터 라벨·옵션. 분류(category) 있으면 분류로, 없으면 격/테마로 */
+  /** 데이터 로드 후: 필터 라벨·옵션. 격 모드면 주격/목적격/소유격/소유대명사/재귀대명사 전부 표시 */
   function applyFilterUI() {
     if (!allWords.length) return;
     const labelEl = document.querySelector('.filter label');
     const useCategory = categoryLabel && allWords.some(function (w) { return w.category; });
     if (labelEl) labelEl.textContent = useCategory ? categoryLabel : themeLabel;
-    const opts = useCategory
-      ? [...new Set(allWords.map(function (w) { return w.category; }).filter(Boolean))].sort()
-      : [...new Set(allWords.flatMap(function (w) { return getCorrectThemes(w); }))].filter(Boolean).sort();
+    var opts;
+    if (themeLabel === '격') {
+      opts = CASE_TYPES.slice();
+    } else if (useCategory) {
+      opts = [...new Set(allWords.map(function (w) { return w.category; }).filter(Boolean))].sort();
+    } else {
+      opts = [...new Set(allWords.flatMap(function (w) { return getCorrectThemes(w); }))].filter(Boolean).sort();
+    }
     const sel = document.getElementById('themeFilter');
     if (!sel) return;
     sel.innerHTML = '<option value="">전체</option>' + opts.map(function (c) {
