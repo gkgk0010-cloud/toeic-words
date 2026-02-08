@@ -14,6 +14,8 @@
   }
 
   const THEMES = ['현재', '과거', '미래', '현재완료'];
+  /** 퀴즈 선택지: 격 퀴즈일 때 항상 이 목록에서 4개 고르기 (소유격만 네 개 나오는 것 방지) */
+  const CASE_TYPES = ['주격', '목적격', '소유격', '소유대명사', '재귀대명사'];
   const isConnectorPage = !!(typeof window !== 'undefined' && window.FORCE_DB_ID);
   var CONNECTOR_DB_ID = '2fa6e4c35a0e81cda20ac619508bbeea';
   var PRONOUN_DB_ID = '3016e4c35a0e807ea96af840fc6f6a6a';
@@ -285,7 +287,12 @@
     $('#cardMeaning').textContent = word.meaning;
     $('#cardExample').textContent = word.example;
     const themesLabel = getCorrectThemes(word).join(', ');
-    $('#cardThemeBadge').textContent = themesLabel || '—';
+    // 카드: 격 퀴즈일 때 뱃지는 1인칭 단수·2인칭 복수 등 분류로 구별
+    if (themeLabel === '격' && word.category) {
+      $('#cardThemeBadge').textContent = word.category;
+    } else {
+      $('#cardThemeBadge').textContent = themesLabel || '—';
+    }
     $('#cardThemeLine').textContent = (themesLabel || '—') + ' ' + (themeLabel === '격' ? '격에 씁니다' : themeLabel + '에 씁니다');
     $('#cardIndex').textContent = (cardIndex + 1) + ' / ' + list.length;
     $('#cardPrev').disabled = cardIndex <= 0;
@@ -392,12 +399,18 @@
     let choices;
     let questionText;
     const allCats = getUniqueCategories();
-    if (themeLabel === '시제' && allCats.length < 2) {
+    if (themeLabel === '격') {
+      // 격 퀴즈: 선택지는 항상 주격·목적격·소유격·소유대명사·재귀대명사 중 4개 (같은 격만 나오는 것 방지)
+      var caseChoices = CASE_TYPES.filter(function (c) { return allWords.some(function (w) { var t = getCorrectThemes(w); return t.indexOf(c) >= 0; }); });
+      if (caseChoices.length < 2) caseChoices = CASE_TYPES.slice();
+      choices = pickCategoryChoices(primaryTheme, caseChoices, 4);
+      questionText = '이 단어는 무슨 격에 쓰이나요?';
+    } else if (themeLabel === '시제' && allCats.length < 2) {
       choices = pickThemeChoices(primaryTheme, 4);
       questionText = '이 단어는 어느 ' + themeLabel + '에 쓰이나요?';
     } else if (allCats.length >= 1) {
       choices = pickCategoryChoices(primaryTheme, allCats, 4);
-      questionText = isConnectorPage ? '이 연결사는 어떤 카테고리에 쓰이나요?' : (themeLabel === '격' ? '이 단어는 무슨 격에 쓰이나요?' : ('이 단어는 어느 ' + themeLabel + '에 쓰이나요?'));
+      questionText = isConnectorPage ? '이 연결사는 어떤 카테고리에 쓰이나요?' : ('이 단어는 어느 ' + themeLabel + '에 쓰이나요?');
     } else {
       choices = pickThemeChoices(primaryTheme, 4);
       questionText = '이 단어는 어느 ' + themeLabel + '에 쓰이나요?';

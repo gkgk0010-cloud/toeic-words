@@ -79,9 +79,9 @@ module.exports = async function handler(req, res) {
     const schema = db.properties || {};
     const setTitleFromDb = db.title && db.title[0] ? db.title[0].plain_text : '';
 
-    // 인칭대명사: 단어=앞면, 뜻=뒷면. 격=퀴즈·카드, 분류=필터.
-    // 표가 "한 행에 주격·목적격·소유격·소유대명사 컬럼"이면 격별로 펼쳐서 전부 반영.
-    const CASE_COLUMN_NAMES = ['주격', '목적격', '소유격', '소유대명사'];
+    // 인칭대명사: 단어=앞면, 뜻=뒷면. 격=퀴즈·카드, 분류=필터. 소유대명사·재귀대명사 포함.
+    // 표가 "한 행에 주격·목적격·소유격·소유대명사·재귀대명사 컬럼"이면 격별로 펼쳐서 전부 반영.
+    const CASE_COLUMN_NAMES = ['주격', '목적격', '소유격', '소유대명사', '재귀대명사'];
     const caseColumnIds = {};
     for (const [id, def] of Object.entries(schema)) {
       const name = (def && def.name) ? String(def.name).trim() : '';
