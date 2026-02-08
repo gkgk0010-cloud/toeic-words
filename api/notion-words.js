@@ -68,10 +68,10 @@ module.exports = async function handler(req, res) {
     const schema = db.properties || {};
     const setTitleFromDb = db.title && db.title[0] ? db.title[0].plain_text : '';
 
-    const keyId = findPropId(schema, ['키워드', 'keyword', 'Keyword', 'Name', '이름', '제목']);
-    const meaningId = findPropId(schema, ['뜻/설명', '뜻', 'meaning', 'Meaning']);
-    const exampleId = findPropId(schema, ['예문', 'example', 'Example']);
-    const themeId = findPropId(schema, ['테마', 'theme', 'Theme', '시제', '카테고리']);
+    const keyId = findPropId(schema, ['키워드', 'keyword', 'Keyword', 'Name', '이름', '제목', '구분']);
+    const meaningId = findPropId(schema, ['뜻/설명', '뜻', 'meaning', 'Meaning', '주격', '분류']);
+    const exampleId = findPropId(schema, ['예문', 'example', 'Example', '소유격', '목적격']);
+    const themeId = findPropId(schema, ['테마', 'theme', 'Theme', '시제', '카테고리', '분류']);
 
     if (!keyId) {
       return res.status(400).json({
