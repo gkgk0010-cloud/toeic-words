@@ -71,7 +71,8 @@ module.exports = async function handler(req, res) {
     const keyId = findPropId(schema, ['키워드', 'keyword', 'Keyword', 'Name', '이름', '제목', '구분']);
     const meaningId = findPropId(schema, ['뜻/설명', '뜻', 'meaning', 'Meaning', '주격', '분류']);
     const exampleId = findPropId(schema, ['예문', 'example', 'Example', '소유격', '목적격']);
-    const themeId = findPropId(schema, ['테마', 'theme', 'Theme', '시제', '카테고리', '분류']);
+    const themeId = findPropId(schema, ['테마', 'theme', 'Theme', '시제', '카테고리', '분류', '구분']);
+    const themeLabel = themeId && schema[themeId] && schema[themeId].name ? schema[themeId].name : '테마';
 
     if (!keyId) {
       return res.status(400).json({
@@ -117,7 +118,7 @@ module.exports = async function handler(req, res) {
 
     const setTitle = (req.query.set_title || '').trim() || setTitleFromDb || '노션 족보';
 
-    return res.status(200).json({ setTitle, words });
+    return res.status(200).json({ setTitle, themeLabel, words });
   } catch (e) {
     console.error('notion-words api error', e);
     return res.status(500).json({ error: 'Server error', message: e.message });

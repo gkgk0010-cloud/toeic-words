@@ -19,6 +19,7 @@
   let filteredWords = [];
   let quizWordOrder = []; // 퀴즈 시 매번 셔플된 순서
   let setTitle = '';
+  let themeLabel = '시제'; // API에서 오면 '구분','분류' 등으로 바뀜. 탭/필터/퀴즈 문구에 사용
   let cardIndex = 0;
   let quizIndex = 0;
   let quizScore = { correct: 0, total: 0 };
@@ -90,17 +91,20 @@
         if (!data) {
           var cacheKey = 'words_cache_' + dbId;
           var useCache = false;
-          try {
-            var raw = sessionStorage.getItem(cacheKey);
-            if (raw) {
-              var cached = JSON.parse(raw);
-              var age = Date.now() - (cached.ts || 0);
-              if (age < CACHE_TTL_MS && cached.words && cached.words.length > 0) {
-                data = { setTitle: cached.setTitle || '', words: cached.words };
-                useCache = true;
+          // 연결사 페이지만 캐시 사용. ?db= 로 열린 노션 DB는 항상 API에서 새로 불러와서 시제부사 등 다른 데이터와 섞이지 않게 함
+          if (isConnectorPage) {
+            try {
+              var raw = sessionStorage.getItem(cacheKey);
+              if (raw) {
+                var cached = JSON.parse(raw);
+                var age = Date.now() - (cached.ts || 0);
+                if (age < CACHE_TTL_MS && cached.words && cached.words.length > 0) {
+                  data = { setTitle: cached.setTitle || '', words: cached.words };
+                  useCache = true;
+                }
               }
-            }
-          } catch (e) {}
+            } catch (e) {}
+          }
 
           if (!useCache) {
           if (document.getElementById('pageTitle')) {
@@ -149,9 +153,11 @@
       }
 
       setTitle = data.setTitle || '토익 시제부사';
+      themeLabel = (data.themeLabel && data.themeLabel.trim()) || (isConnectorPage ? '카테고리' : '시제');
       allWords = data.words || [];
       applyFilter();
       document.getElementById('pageTitle').textContent = setTitle;
+      document.title = setTitle + ' · 똑패스';
       var errEl = document.getElementById('loadError');
       if (errEl) { errEl.style.display = 'none'; errEl.textContent = ''; }
       var initEl = document.getElementById('initStatus');
@@ -228,7 +234,7 @@
     $('#cardExample').textContent = word.example;
     const themesLabel = getCorrectThemes(word).join(', ');
     $('#cardThemeBadge').textContent = themesLabel || '—';
-    $('#cardThemeLine').textContent = (themesLabel || '—') + (isConnectorPage ? ' 카테고리에 씁니다' : ' 시제에 씁니다');
+    $('#cardThemeLine').textContent = (themesLabel || '—') + ' ' + themeLabel + '에 씁니다';
     $('#cardIndex').textContent = (cardIndex + 1) + ' / ' + list.length;
     $('#cardPrev').disabled = cardIndex <= 0;
     $('#cardNext').disabled = cardIndex >= list.length - 1;
@@ -333,13 +339,13 @@
     const primaryTheme = correctThemes[0];
     let choices;
     let questionText;
-    if (isConnectorPage) {
-      const allCats = getUniqueCategories();
+    const allCats = getUniqueCategories();
+    if (allCats.length >= 2) {
       choices = pickCategoryChoices(primaryTheme, allCats, 4);
-      questionText = '이 연결사는 어떤 카테고리에 쓰이나요?';
+      questionText = isConnectorPage ? '이 연결사는 어떤 카테고리에 쓰이나요?' : ('이 단어는 어느 ' + themeLabel + '에 쓰이나요?');
     } else {
       choices = pickThemeChoices(primaryTheme, 4);
-      questionText = '이 부사는 어느 시제에 쓰이나요?';
+      questionText = '이 단어는 어느 ' + themeLabel + '에 쓰이나요?';
     }
     $('#quizWord').textContent = currentQuizWord.keyword;
     $('#quizQuestion').textContent = questionText;
@@ -391,7 +397,7 @@
     const theme = li.getAttribute('data-theme');
     const correctThemes = getCorrectThemes(currentQuizWord);
     const correct = correctThemes.includes(theme);
-    const correctLabel = correctThemes.join(', ') + (isConnectorPage ? ' 카테고리' : ' 시제');
+    const correctLabel = correctThemes.join(', ') + ' ' + themeLabel;
     quizAnswered = true;
     quizScore.total++;
     if (correct) quizScore.correct++;
@@ -428,15 +434,15 @@
     }
   });
 
-  /** 연결사 페이지: 필터 라벨·옵션을 카테고리로 변경 */
-  function applyConnectorFilterUI() {
-    if (!isConnectorPage || !allWords.length) return;
-    const cats = [...new Set(allWords.flatMap(function (w) { return getCorrectThemes(w); }))].filter(Boolean).sort();
+  /** 데이터 로드 후: 필터 라벨을 themeLabel로, 옵션을 실제 테마 값(전체+데이터 기준)으로 통일 */
+  function applyFilterUI() {
+    if (!allWords.length) return;
     const labelEl = document.querySelector('.filter label');
-    if (labelEl) labelEl.textContent = '카테고리';
+    if (labelEl) labelEl.textContent = themeLabel;
+    const opts = [...new Set(allWords.flatMap(function (w) { return getCorrectThemes(w); }))].filter(Boolean).sort();
     const sel = document.getElementById('themeFilter');
     if (!sel) return;
-    sel.innerHTML = '<option value="">전체</option>' + cats.map(function (c) {
+    sel.innerHTML = '<option value="">전체</option>' + opts.map(function (c) {
       return '<option value="' + String(c).replace(/"/g, '&quot;') + '">' + String(c) + '</option>';
     }).join('');
   }
@@ -457,7 +463,7 @@
   // ——— 초기화 ———
   loadData().then(() => {
     try {
-      applyConnectorFilterUI();
+      applyFilterUI();
       showView(parseHash());
       hideInitStatus();
     } catch (e) {
