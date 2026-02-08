@@ -241,14 +241,18 @@
 
   function applyFilter(resetCardIndex) {
     const val = ($('#themeFilter') || {}).value || '';
+    const useCategoryForFilter = categoryLabel && allWords.some(function (w) { return w.category; });
     if (!val) {
       filteredWords = [...allWords];
+    } else if (themeLabel === '격' && useCategoryForFilter) {
+      // 인칭대명사: 필터는 구분(1인칭 단수 등)으로 → 재귀대명사 단어도 해당 구분 선택 시 함께 노출
+      filteredWords = allWords.filter(function (w) { return w.category === val; });
     } else if (themeLabel === '격') {
       filteredWords = allWords.filter(function (w) {
         const themes = (w.themes && w.themes.length) ? w.themes : (w.theme ? [w.theme] : []);
         return themes.includes(val);
       });
-    } else if (categoryLabel && allWords.some(function (w) { return w.category; })) {
+    } else if (useCategoryForFilter) {
       filteredWords = allWords.filter(function (w) { return w.category === val; });
     } else {
       filteredWords = allWords.filter(function (w) {
@@ -289,16 +293,19 @@
     }
 
     $('#cardKeyword').textContent = word.keyword;
-    $('#cardMeaning').textContent = word.meaning;
-    $('#cardExample').textContent = word.example;
     const themesLabel = getCorrectThemes(word).join(', ');
-    // 카드: 격 퀴즈일 때 뱃지는 1인칭 단수·2인칭 복수 등 분류로 구별 (분류 없으면 격 표시)
     if (themeLabel === '격') {
+      // 단어 탭 시 뒷면에 구분, 분류, 격 표시 (2번 사진 스타일)
+      $('#cardMeaning').textContent = '구분: ' + (word.category && String(word.category).trim() ? word.category : '—');
+      $('#cardExample').textContent = '분류: ' + (word.category && String(word.category).trim() ? word.category : '—');
+      $('#cardThemeLine').textContent = '격: ' + (themesLabel || '—');
       $('#cardThemeBadge').textContent = (word.category && String(word.category).trim()) || themesLabel || '—';
     } else {
+      $('#cardMeaning').textContent = word.meaning;
+      $('#cardExample').textContent = word.example;
       $('#cardThemeBadge').textContent = themesLabel || '—';
+      $('#cardThemeLine').textContent = (themesLabel || '—') + ' ' + (themeLabel + '에 씁니다');
     }
-    $('#cardThemeLine').textContent = (themesLabel || '—') + ' ' + (themeLabel === '격' ? '격에 씁니다' : themeLabel + '에 씁니다');
     $('#cardIndex').textContent = (cardIndex + 1) + ' / ' + list.length;
     $('#cardPrev').disabled = cardIndex <= 0;
     $('#cardNext').disabled = cardIndex >= list.length - 1;
@@ -507,19 +514,25 @@
     }
   });
 
-  /** 데이터 로드 후: 필터 라벨·옵션. 격 모드면 주격/목적격/소유격/소유대명사/재귀대명사 전부 표시 */
+  /** 데이터 로드 후: 필터 라벨·옵션. 인칭대명사(격)는 구분(1인칭 단수 등)으로 필터, 퀴즈는 격 유지 */
   function applyFilterUI() {
     if (!allWords.length) return;
     const labelEl = document.querySelector('.filter label');
     const useCategory = categoryLabel && allWords.some(function (w) { return w.category; });
-    if (labelEl) labelEl.textContent = useCategory ? categoryLabel : themeLabel;
     var opts;
-    if (themeLabel === '격') {
-      opts = CASE_TYPES.slice();
-    } else if (useCategory) {
+    if (themeLabel === '격' && useCategory) {
+      if (labelEl) labelEl.textContent = categoryLabel; // '구분'
       opts = [...new Set(allWords.map(function (w) { return w.category; }).filter(Boolean))].sort();
+    } else if (themeLabel === '격') {
+      if (labelEl) labelEl.textContent = themeLabel;
+      opts = CASE_TYPES.slice();
     } else {
-      opts = [...new Set(allWords.flatMap(function (w) { return getCorrectThemes(w); }))].filter(Boolean).sort();
+      if (labelEl) labelEl.textContent = useCategory ? categoryLabel : themeLabel;
+      if (useCategory) {
+        opts = [...new Set(allWords.map(function (w) { return w.category; }).filter(Boolean))].sort();
+      } else {
+        opts = [...new Set(allWords.flatMap(function (w) { return getCorrectThemes(w); }))].filter(Boolean).sort();
+      }
     }
     const sel = document.getElementById('themeFilter');
     if (!sel) return;
