@@ -21,7 +21,8 @@
   let filteredWords = [];
   let quizWordOrder = []; // 퀴즈 시 매번 셔플된 순서
   let setTitle = '';
-  let themeLabel = '시제'; // API에서 오면 '구분','분류' 등으로 바뀜. 탭/필터/퀴즈 문구에 사용
+  let themeLabel = '시제'; // 격(퀴즈·카드). API에서 '격','구분' 등
+  let categoryLabel = '';  // 분류(필터). API에서 '분류','종류' 등. 있으면 필터는 분류(1인칭 단수 등), 퀴즈는 격
   let cardIndex = 0;
   let quizIndex = 0;
   let quizScore = { correct: 0, total: 0 };
@@ -90,7 +91,7 @@
             var age = Date.now() - (cached.ts || 0);
             var ttl = age < CACHE_TTL_MS ? CACHE_TTL_MS : LOCAL_CACHE_TTL_MS;
             if (age < ttl && cached.words && cached.words.length > 0) {
-              instantData = { setTitle: cached.setTitle || '', themeLabel: cached.themeLabel || '', words: cached.words };
+              instantData = { setTitle: cached.setTitle || '', themeLabel: cached.themeLabel || '', categoryLabel: cached.categoryLabel || '', words: cached.words };
             }
           }
         } catch (e) {}
@@ -152,7 +153,7 @@
                 var view = (window.location.hash || '#cards').slice(1) || 'cards';
                 if (view === 'cards') renderCard();
                 try {
-                  var payload = JSON.stringify({ setTitle: setTitle, themeLabel: themeLabel, words: allWords, ts: Date.now() });
+                  var payload = JSON.stringify({ setTitle: setTitle, themeLabel: themeLabel, categoryLabel: categoryLabel, words: allWords, ts: Date.now() });
                   sessionStorage.setItem('words_cache_' + id, payload);
                   localStorage.setItem('words_cache_' + id, payload);
                 } catch (e) {}
@@ -186,6 +187,7 @@
             var payload = JSON.stringify({
               setTitle: data.setTitle || '',
               themeLabel: (data.themeLabel && data.themeLabel.trim()) || '',
+              categoryLabel: (data.categoryLabel && data.categoryLabel.trim()) || '',
               words: data.words || [],
               ts: Date.now()
             });
@@ -201,6 +203,7 @@
 
       setTitle = data.setTitle || '토익 시제부사';
       themeLabel = (data.themeLabel && data.themeLabel.trim()) || (isConnectorPage ? '카테고리' : '시제');
+      categoryLabel = (data.categoryLabel && data.categoryLabel.trim()) || '';
       allWords = data.words || [];
       applyFilter();
       document.getElementById('pageTitle').textContent = setTitle;
@@ -235,13 +238,15 @@
   }
 
   function applyFilter(resetCardIndex) {
-    const theme = ($('#themeFilter') || {}).value || '';
-    if (!theme) {
+    const val = ($('#themeFilter') || {}).value || '';
+    if (!val) {
       filteredWords = [...allWords];
+    } else if (categoryLabel && allWords.some(function (w) { return w.category; })) {
+      filteredWords = allWords.filter(function (w) { return w.category === val; });
     } else {
       filteredWords = allWords.filter(function (w) {
         const themes = (w.themes && w.themes.length) ? w.themes : (w.theme ? [w.theme] : []);
-        return themes.includes(theme);
+        return themes.includes(val);
       });
     }
     if (resetCardIndex) cardIndex = 0;
@@ -281,7 +286,7 @@
     $('#cardExample').textContent = word.example;
     const themesLabel = getCorrectThemes(word).join(', ');
     $('#cardThemeBadge').textContent = themesLabel || '—';
-    $('#cardThemeLine').textContent = (themesLabel || '—') + ' ' + themeLabel + '에 씁니다';
+    $('#cardThemeLine').textContent = (themesLabel || '—') + ' ' + (themeLabel === '격' ? '격에 씁니다' : themeLabel + '에 씁니다');
     $('#cardIndex').textContent = (cardIndex + 1) + ' / ' + list.length;
     $('#cardPrev').disabled = cardIndex <= 0;
     $('#cardNext').disabled = cardIndex >= list.length - 1;
@@ -392,7 +397,7 @@
       questionText = '이 단어는 어느 ' + themeLabel + '에 쓰이나요?';
     } else if (allCats.length >= 1) {
       choices = pickCategoryChoices(primaryTheme, allCats, 4);
-      questionText = isConnectorPage ? '이 연결사는 어떤 카테고리에 쓰이나요?' : ('이 단어는 어느 ' + themeLabel + '에 쓰이나요?');
+      questionText = isConnectorPage ? '이 연결사는 어떤 카테고리에 쓰이나요?' : (themeLabel === '격' ? '이 단어는 무슨 격에 쓰이나요?' : ('이 단어는 어느 ' + themeLabel + '에 쓰이나요?'));
     } else {
       choices = pickThemeChoices(primaryTheme, 4);
       questionText = '이 단어는 어느 ' + themeLabel + '에 쓰이나요?';
@@ -484,12 +489,15 @@
     }
   });
 
-  /** 데이터 로드 후: 필터 라벨을 themeLabel로, 옵션을 실제 테마 값(전체+데이터 기준)으로 통일 */
+  /** 데이터 로드 후: 필터 라벨·옵션. 분류(category) 있으면 분류로, 없으면 격/테마로 */
   function applyFilterUI() {
     if (!allWords.length) return;
     const labelEl = document.querySelector('.filter label');
-    if (labelEl) labelEl.textContent = themeLabel;
-    const opts = [...new Set(allWords.flatMap(function (w) { return getCorrectThemes(w); }))].filter(Boolean).sort();
+    const useCategory = categoryLabel && allWords.some(function (w) { return w.category; });
+    if (labelEl) labelEl.textContent = useCategory ? categoryLabel : themeLabel;
+    const opts = useCategory
+      ? [...new Set(allWords.map(function (w) { return w.category; }).filter(Boolean))].sort()
+      : [...new Set(allWords.flatMap(function (w) { return getCorrectThemes(w); }))].filter(Boolean).sort();
     const sel = document.getElementById('themeFilter');
     if (!sel) return;
     sel.innerHTML = '<option value="">전체</option>' + opts.map(function (c) {
