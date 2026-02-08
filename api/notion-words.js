@@ -130,25 +130,29 @@ module.exports = async function handler(req, res) {
       cursor = data.next_cursor || null;
     } while (cursor);
 
-    // 3) 앱용 words 배열. 표가 주격·목적격·소유격·소유대명사 컬럼이면 한 행을 격별로 펼침
+    // 3) 앱용 words 배열. 표가 주격·목적격·소유격·소유대명사 컬럼이면 한 행을 격별로 펼침.
+    // 같은 (분류, 단어)가 여러 격이면 하나로 합쳐서 themes 배열로 (you=주격·목적격 → 둘 다 정답)
     let words;
     if (useWideTable) {
-      words = [];
+      const byKey = {};
       for (const page of allPages) {
         const categoryVal = categoryId ? getPropPlain(page, categoryId) : '';
         for (const [caseName, propId] of Object.entries(caseColumnIds)) {
           const keyword = getPropPlain(page, propId);
           if (!keyword || (keyword.trim() === '-' || keyword.trim() === '')) continue;
           const themeVal = normalizeCaseName(caseName);
-          words.push({
-            keyword,
-            meaning: themeVal,
-            example: '',
-            theme: themeVal,
-            category: categoryVal || themeVal
-          });
+          const key = (categoryVal || '') + '|' + keyword.trim();
+          if (!byKey[key]) {
+            byKey[key] = { keyword: keyword.trim(), meaning: themeVal, example: '', category: categoryVal || themeVal, themes: [] };
+          }
+          if (byKey[key].themes.indexOf(themeVal) === -1) byKey[key].themes.push(themeVal);
         }
       }
+      words = Object.values(byKey).map((w) => {
+        w.meaning = w.themes.join(', ');
+        if (w.themes.length === 1) w.theme = w.themes[0];
+        return w;
+      });
     } else {
       words = allPages.map((page) => {
         const keyword = getPropPlain(page, keyId);
