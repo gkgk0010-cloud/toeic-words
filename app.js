@@ -243,6 +243,11 @@
     const val = ($('#themeFilter') || {}).value || '';
     if (!val) {
       filteredWords = [...allWords];
+    } else if (themeLabel === '격') {
+      filteredWords = allWords.filter(function (w) {
+        const themes = (w.themes && w.themes.length) ? w.themes : (w.theme ? [w.theme] : []);
+        return themes.includes(val);
+      });
     } else if (categoryLabel && allWords.some(function (w) { return w.category; })) {
       filteredWords = allWords.filter(function (w) { return w.category === val; });
     } else {
