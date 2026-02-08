@@ -87,9 +87,21 @@ module.exports = async function handler(req, res) {
       const name = (def && def.name) ? String(def.name).trim() : '';
       if (CASE_COLUMN_NAMES.includes(name)) caseColumnIds[name] = id;
     }
-    /** 노션 컬럼명 "소유 대명사" → 앱에서는 "소유대명사"로 통일 */
+    // 재귀대명사 컬럼이 정확한 이름이 아니어도 인식 (예: "재귀 대명사", "재귀대 명사" 등)
+    if (!caseColumnIds['재귀대명사']) {
+      for (const [id, def] of Object.entries(schema)) {
+        const name = (def && def.name) ? String(def.name).trim() : '';
+        if (/재귀/.test(name)) {
+          caseColumnIds['재귀대명사'] = id;
+          break;
+        }
+      }
+    }
+    /** 노션 컬럼명 "소유 대명사" → 앱에서는 "소유대명사"로 통일. 재귀 계열도 "재귀대명사"로 통일 */
     function normalizeCaseName(name) {
-      return (name === '소유 대명사') ? '소유대명사' : (name || '');
+      if (name === '소유 대명사') return '소유대명사';
+      if (name && /재귀/.test(name)) return '재귀대명사';
+      return name || '';
     }
     const useWideTable = Object.keys(caseColumnIds).length >= 2;
     const categoryId = findPropIdByOrder(schema, ['구분', '분류', '종류', '인칭', '인칭/수']);

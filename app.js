@@ -16,6 +16,26 @@
   const THEMES = ['현재', '과거', '미래', '현재완료'];
   /** 퀴즈 선택지: 격 퀴즈일 때 항상 이 목록에서 4개 고르기 (소유격만 네 개 나오는 것 방지) */
   const CASE_TYPES = ['주격', '목적격', '소유격', '소유대명사', '재귀대명사'];
+  /** 격별 의미(데이터 없음 → 코드로). 구분(category)별 주격/목적격/소유격/소유대명사/재귀대명사 설명 */
+  const CASE_MEANINGS = {
+    '1인칭 단수': { 주격: '나(는/가)', 목적격: '나(에게/를)', 소유격: '나의', 소유대명사: '나의것', 재귀대명사: '나 스스로' },
+    '2인칭 단수,복수': { 주격: '너(은는이가)', 목적격: '너(에게/를)', 소유격: '너의', 소유대명사: '너의것', 재귀대명사: '너 스스로' },
+    '2인칭 단수·복수': { 주격: '너(은는이가)', 목적격: '너(에게/를)', 소유격: '너의', 소유대명사: '너의것', 재귀대명사: '너 스스로' },
+    '3인칭 남성 단수': { 주격: '그(는/가)', 목적격: '그(에게/를)', 소유격: '그의', 소유대명사: '그의것', 재귀대명사: '그 스스로' },
+    '3인칭 여성 단수': { 주격: '그녀(는/가)', 목적격: '그녀(에게/를)', 소유격: '그녀의', 소유대명사: '그녀의것', 재귀대명사: '그녀 스스로' },
+    '3인칭 중성 단수(사람X)': { 주격: '그것(은/는)', 목적격: '그것(에게/를)', 소유격: '그것의', 소유대명사: '그것의것', 재귀대명사: '그것 스스로' },
+    '1인칭 복수': { 주격: '우리(는/가)', 목적격: '우리(에게/를)', 소유격: '우리의', 소유대명사: '우리의것', 재귀대명사: '우리 스스로' },
+    '3인칭 복수': { 주격: '그들(은/는)', 목적격: '그들(에게/를)', 소유격: '그들의', 소유대명사: '그들의것', 재귀대명사: '그들 스스로' }
+  };
+  function getCaseMeaning(category, caseType) {
+    var m = CASE_MEANINGS[category];
+    if (m && m[caseType]) return m[caseType];
+    for (var key in CASE_MEANINGS) {
+      if (category && category.indexOf(key) >= 0) return CASE_MEANINGS[key][caseType];
+      if (key.indexOf(category) >= 0) return CASE_MEANINGS[key][caseType];
+    }
+    return caseType;
+  }
   const isConnectorPage = !!(typeof window !== 'undefined' && window.FORCE_DB_ID);
   var CONNECTOR_DB_ID = '2fa6e4c35a0e81cda20ac619508bbeea';
   var PRONOUN_DB_ID = '3016e4c35a0e807ea96af840fc6f6a6a';
@@ -295,11 +315,14 @@
     $('#cardKeyword').textContent = word.keyword;
     const themesLabel = getCorrectThemes(word).join(', ');
     if (themeLabel === '격') {
-      // 단어 탭 시 뒷면에 구분, 분류, 격 표시 (2번 사진 스타일)
-      $('#cardMeaning').textContent = '구분: ' + (word.category && String(word.category).trim() ? word.category : '—');
-      $('#cardExample').textContent = '분류: ' + (word.category && String(word.category).trim() ? word.category : '—');
+      // 뒷면: 구분만 + 의미(격별 설명, 코드 매핑) + 격
+      var cat = word.category && String(word.category).trim() ? word.category : '';
+      $('#cardMeaning').textContent = '구분: ' + (cat || '—');
+      var themes = getCorrectThemes(word);
+      var meaningParts = themes.map(function (t) { return t + ': ' + getCaseMeaning(cat, t); });
+      $('#cardExample').textContent = '의미: ' + (meaningParts.length ? meaningParts.join(', ') : '—');
       $('#cardThemeLine').textContent = '격: ' + (themesLabel || '—');
-      $('#cardThemeBadge').textContent = (word.category && String(word.category).trim()) || themesLabel || '—';
+      $('#cardThemeBadge').textContent = cat || themesLabel || '—';
     } else {
       $('#cardMeaning').textContent = word.meaning;
       $('#cardExample').textContent = word.example;
