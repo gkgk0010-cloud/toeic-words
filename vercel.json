@@ -1,6 +1,6 @@
 {
   "framework": null,
-  "buildCommand": null,
+  "buildCommand": "node scripts/fetch-pronoun-words.js",
   "outputDirectory": ".",
   "headers": [
     {

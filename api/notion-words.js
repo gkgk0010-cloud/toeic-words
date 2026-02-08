@@ -26,11 +26,22 @@ function getPropMultiSelect(page, prop) {
   return p.multi_select.map((x) => x.name).filter(Boolean);
 }
 
-/** property 이름(한글/영어)으로 id 찾기 */
+/** property 이름으로 id 찾기 (스키마 순서대로 첫 매칭) */
 function findPropId(schema, names) {
   for (const [id, def] of Object.entries(schema)) {
     const name = (def && def.name) ? String(def.name).trim() : '';
     if (names.some((n) => n === name)) return id;
+  }
+  return null;
+}
+
+/** 이름 우선순위대로 찾기. 인칭대명사에서 주격=앞면·구분=뒷면 쓰려면 keyword는 단어 컬럼 우선 */
+function findPropIdByOrder(schema, orderedNames) {
+  for (const want of orderedNames) {
+    for (const [id, def] of Object.entries(schema)) {
+      const name = (def && def.name) ? String(def.name).trim() : '';
+      if (name === want) return id;
+    }
   }
   return null;
 }
@@ -68,8 +79,9 @@ module.exports = async function handler(req, res) {
     const schema = db.properties || {};
     const setTitleFromDb = db.title && db.title[0] ? db.title[0].plain_text : '';
 
-    const keyId = findPropId(schema, ['키워드', 'keyword', 'Keyword', 'Name', '이름', '제목', '구분']);
-    const meaningId = findPropId(schema, ['뜻/설명', '뜻', 'meaning', 'Meaning', '주격', '분류']);
+    // 인칭대명사: 단어(주격 등)=카드 앞면·퀴즈 문제, 구분/분류=뒷면·선택지. 우선순위로 매핑
+    const keyId = findPropIdByOrder(schema, ['키워드', 'keyword', 'Keyword', 'Name', '단어', '주격', '목적격', '소유격', '이름', '제목', '구분']);
+    const meaningId = findPropIdByOrder(schema, ['뜻/설명', '뜻', 'meaning', 'Meaning', '구분', '분류', '주격', '소유격', '목적격']);
     const exampleId = findPropId(schema, ['예문', 'example', 'Example', '소유격', '목적격']);
     const themeId = findPropId(schema, ['테마', 'theme', 'Theme', '시제', '카테고리', '분류', '구분']);
     const themeLabel = themeId && schema[themeId] && schema[themeId].name ? schema[themeId].name : '테마';

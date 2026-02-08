@@ -15,6 +15,8 @@
 
   const THEMES = ['현재', '과거', '미래', '현재완료'];
   const isConnectorPage = !!(typeof window !== 'undefined' && window.FORCE_DB_ID);
+  var CONNECTOR_DB_ID = '2fa6e4c35a0e81cda20ac619508bbeea';
+  var PRONOUN_DB_ID = '3016e4c35a0e807ea96af840fc6f6a6a';
   let allWords = [];
   let filteredWords = [];
   let quizWordOrder = []; // 퀴즈 시 매번 셔플된 순서
@@ -51,6 +53,7 @@
   window.addEventListener('hashchange', () => showView(parseHash()));
 
   var CACHE_TTL_MS = 10 * 60 * 1000; // 10분
+  var LOCAL_CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7일 (첫 방문 후 다음 방문부터 바로 표시)
 
   async function loadData() {
     try {
@@ -75,41 +78,89 @@
       }
 
       if (dbId) {
-        // 연결사: 시제부사처럼 로컬 JSON 먼저 로드 (바로 나오게)
-        if (isConnectorPage) {
+        var cacheKey = 'words_cache_' + dbId;
+        var instantData = null;
+
+        // 1) 캐시 시도 — sessionStorage(이번 탭) → localStorage(과거 방문). 같은 dbId만 사용해 내용 섞임 없음.
+        try {
+          var raw = sessionStorage.getItem(cacheKey);
+          if (!raw) raw = localStorage.getItem(cacheKey);
+          if (raw) {
+            var cached = JSON.parse(raw);
+            var age = Date.now() - (cached.ts || 0);
+            var ttl = age < CACHE_TTL_MS ? CACHE_TTL_MS : LOCAL_CACHE_TTL_MS;
+            if (age < ttl && cached.words && cached.words.length > 0) {
+              instantData = { setTitle: cached.setTitle || '', themeLabel: cached.themeLabel || '', words: cached.words };
+            }
+          }
+        } catch (e) {}
+
+        // 2) 캐시 없으면 정적 JSON (연결사·인칭대명사 첫 방문에도 바로 표시)
+        if (!instantData && (dbId === CONNECTOR_DB_ID || isConnectorPage)) {
           try {
-            var staticRes = await fetch('data/connector-words.json?t=' + Date.now(), { cache: 'no-store' });
-            if (staticRes.ok) {
-              var localData = await staticRes.json();
+            var connRes = await fetch('data/connector-words.json?t=' + Date.now(), { cache: 'no-store' });
+            if (connRes.ok) {
+              var localData = await connRes.json();
               if (localData.words && localData.words.length > 0) {
-                data = { setTitle: localData.setTitle || '연결사(접속부사)', words: localData.words };
+                instantData = { setTitle: localData.setTitle || '연결사(접속부사)', themeLabel: '카테고리', words: localData.words };
+              }
+            }
+          } catch (e) {}
+        }
+        if (!instantData && dbId === PRONOUN_DB_ID) {
+          try {
+            var pronRes = await fetch('data/pronoun-words.json?t=' + Date.now(), { cache: 'no-store' });
+            if (pronRes.ok) {
+              var pronData = await pronRes.json();
+              if (pronData.words && pronData.words.length > 0) {
+                instantData = { setTitle: pronData.setTitle || '인칭대명사표', themeLabel: pronData.themeLabel || '구분', words: pronData.words };
               }
             }
           } catch (e) {}
         }
 
-        if (!data) {
-          var cacheKey = 'words_cache_' + dbId;
-          var useCache = false;
-          // 연결사 페이지만 캐시 사용. ?db= 로 열린 노션 DB는 항상 API에서 새로 불러와서 시제부사 등 다른 데이터와 섞이지 않게 함
-          if (isConnectorPage) {
-            try {
-              var raw = sessionStorage.getItem(cacheKey);
-              if (raw) {
-                var cached = JSON.parse(raw);
-                var age = Date.now() - (cached.ts || 0);
-                if (age < CACHE_TTL_MS && cached.words && cached.words.length > 0) {
-                  data = { setTitle: cached.setTitle || '', words: cached.words };
-                  useCache = true;
-                }
+        if (instantData) {
+          data = instantData;
+          // 백그라운드에서 같은 dbId만 API로 갱신 (내용 섞이지 않음)
+          (function (id) {
+            var origin = window.location.origin || '';
+            if (!origin && window.location.href) {
+              var a = document.createElement('a');
+              a.href = window.location.href;
+              origin = a.origin || (a.protocol + '//' + a.host);
+            }
+            var pathname = (window.location && window.location.pathname) || '';
+            var pathParts = pathname.split('/').filter(Boolean);
+            var basePath = pathParts.length > 1 ? '/' + pathParts.slice(0, -1).join('/') : '';
+            var apiUrl = (origin || '') + basePath + '/api/notion-words?database_id=' + encodeURIComponent(id) +
+              (params.get('set_title') ? '&set_title=' + encodeURIComponent(params.get('set_title')) : '') + '&t=' + Date.now();
+            fetch(apiUrl, { cache: 'no-store', method: 'GET' }).then(function (res) {
+              if (!res.ok && basePath && res.status === 404) {
+                return fetch((origin || '') + '/api/notion-words?database_id=' + encodeURIComponent(id) +
+                  (params.get('set_title') ? '&set_title=' + encodeURIComponent(params.get('set_title')) : '') + '&t=' + Date.now(), { cache: 'no-store', method: 'GET' });
               }
-            } catch (e) {}
-          }
-
-          if (!useCache) {
-          if (document.getElementById('pageTitle')) {
-            document.getElementById('pageTitle').textContent = isConnectorPage ? '연결사 로드 중…' : '로드 중…';
-          }
+              return res;
+            }).then(function (res) { return res.ok ? res.json() : null; }).then(function (apiData) {
+              if (apiData && apiData.words && apiData.words.length > 0) {
+                setTitle = apiData.setTitle || setTitle;
+                themeLabel = (apiData.themeLabel && apiData.themeLabel.trim()) || themeLabel;
+                allWords = apiData.words || [];
+                applyFilter();
+                if (document.getElementById('pageTitle')) document.getElementById('pageTitle').textContent = setTitle;
+                document.title = setTitle + ' · 똑패스';
+                applyFilterUI();
+                var view = (window.location.hash || '#cards').slice(1) || 'cards';
+                if (view === 'cards') renderCard();
+                try {
+                  var payload = JSON.stringify({ setTitle: setTitle, themeLabel: themeLabel, words: allWords, ts: Date.now() });
+                  sessionStorage.setItem('words_cache_' + id, payload);
+                  localStorage.setItem('words_cache_' + id, payload);
+                } catch (e) {}
+              }
+            }).catch(function () {});
+          })(dbId);
+        } else {
+          if (document.getElementById('pageTitle')) document.getElementById('pageTitle').textContent = '로드 중…';
           var origin = window.location.origin || '';
           if (!origin && window.location.href) {
             var a = document.createElement('a');
@@ -118,33 +169,29 @@
           }
           var pathname = (window.location && window.location.pathname) || '';
           var pathParts = pathname.split('/').filter(Boolean);
-          var basePath = '';
-          if (pathParts.length > 1) {
-            pathParts.pop();
-            basePath = '/' + pathParts.join('/');
-          }
+          var basePath = pathParts.length > 1 ? '/' + pathParts.slice(0, -1).join('/') : '';
           var apiUrl = (origin || '') + basePath + '/api/notion-words?database_id=' + encodeURIComponent(dbId) +
-            (params.get('set_title') ? '&set_title=' + encodeURIComponent(params.get('set_title')) : '') +
-            '&t=' + Date.now();
+            (params.get('set_title') ? '&set_title=' + encodeURIComponent(params.get('set_title')) : '') + '&t=' + Date.now();
           var res = await fetch(apiUrl, { cache: 'no-store', method: 'GET' });
           if (!res.ok && basePath && res.status === 404) {
             res = await fetch((origin || '') + '/api/notion-words?database_id=' + encodeURIComponent(dbId) +
-              (params.get('set_title') ? '&set_title=' + encodeURIComponent(params.get('set_title')) : '') +
-              '&t=' + Date.now(), { cache: 'no-store', method: 'GET' });
+              (params.get('set_title') ? '&set_title=' + encodeURIComponent(params.get('set_title')) : '') + '&t=' + Date.now(), { cache: 'no-store', method: 'GET' });
           }
           if (!res.ok) {
-            const err = await res.json().catch(() => ({}));
+            var err = await res.json().catch(function () { return {}; });
             throw new Error(err.error || err.message || res.statusText);
           }
           data = await res.json();
           try {
-            sessionStorage.setItem(cacheKey, JSON.stringify({
+            var payload = JSON.stringify({
               setTitle: data.setTitle || '',
+              themeLabel: (data.themeLabel && data.themeLabel.trim()) || '',
               words: data.words || [],
               ts: Date.now()
-            }));
+            });
+            sessionStorage.setItem(cacheKey, payload);
+            localStorage.setItem(cacheKey, payload);
           } catch (e) {}
-          }
         }
       } else {
         // 없으면 기존 words.json
@@ -340,7 +387,10 @@
     let choices;
     let questionText;
     const allCats = getUniqueCategories();
-    if (allCats.length >= 2) {
+    if (themeLabel === '시제' && allCats.length < 2) {
+      choices = pickThemeChoices(primaryTheme, 4);
+      questionText = '이 단어는 어느 ' + themeLabel + '에 쓰이나요?';
+    } else if (allCats.length >= 1) {
       choices = pickCategoryChoices(primaryTheme, allCats, 4);
       questionText = isConnectorPage ? '이 연결사는 어떤 카테고리에 쓰이나요?' : ('이 단어는 어느 ' + themeLabel + '에 쓰이나요?');
     } else {
