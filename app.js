@@ -319,7 +319,7 @@
       var cat = word.category && String(word.category).trim() ? word.category : '';
       $('#cardMeaning').textContent = '구분: ' + (cat || '—');
       var themes = getCorrectThemes(word);
-      var meaningParts = themes.map(function (t) { return t + ': ' + getCaseMeaning(cat, t); });
+      var meaningParts = themes.map(function (t) { return getCaseMeaning(cat, t); });
       $('#cardExample').textContent = '의미: ' + (meaningParts.length ? meaningParts.join(', ') : '—');
       $('#cardThemeLine').textContent = '격: ' + (themesLabel || '—');
       $('#cardThemeBadge').textContent = cat || themesLabel || '—';
