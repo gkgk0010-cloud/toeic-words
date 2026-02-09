@@ -463,6 +463,15 @@
     });
   }
 
+  /** 똑패스 "오늘 족보"에 뜨게 하려면 created_at_kst(KST 문자열) 필수 */
+  function nowKstString() {
+    const d = new Date();
+    const kst = new Date(d.getTime() + 9 * 60 * 60 * 1000);
+    const pad = (n) => (n < 10 ? '0' : '') + n;
+    return kst.getUTCFullYear() + '-' + pad(kst.getUTCMonth() + 1) + '-' + pad(kst.getUTCDate()) +
+      ' ' + pad(kst.getUTCHours()) + ':' + pad(kst.getUTCMinutes()) + ':' + pad(kst.getUTCSeconds());
+  }
+
   async function logAnswer(correct) {
     const cfg = window.APP_CONFIG;
     if (!cfg || !cfg.SUPABASE_URL || !cfg.SUPABASE_ANON_KEY) return;
@@ -485,7 +494,8 @@
           student_name: studentName || null,
           tag: tag,
           correct: correct,
-          quiz_type: 'input'
+          quiz_type: 'input',
+          created_at_kst: nowKstString()
         })
       });
       if (!res.ok) throw new Error(res.statusText);
