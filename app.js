@@ -283,10 +283,10 @@
     if (resetCardIndex) cardIndex = 0;
   }
 
-  /** answer_logs.tag / 모니터용. 연결사 페이지는 API에서 받은 setTitle(DB 제목) 사용, 시제부사는 config 또는 setTitle */
+  /** answer_logs.tag / 모니터용. 실제 로드된 테스트 제목(setTitle) 우선, 없으면 config·기본값 */
   function getTag() {
-    if (isConnectorPage) return setTitle || '연결사(접속부사)';
-    return (window.APP_CONFIG && window.APP_CONFIG.TEST_TITLE) || setTitle || '토익 시제부사';
+    if (isConnectorPage) return (setTitle && setTitle.trim()) || '연결사(접속부사)';
+    return (setTitle && setTitle.trim()) || (window.APP_CONFIG && window.APP_CONFIG.TEST_TITLE) || '토익 시제부사';
   }
 
   // ——— 카드 ———
