@@ -77,6 +77,7 @@
 
   var CACHE_TTL_MS = 10 * 60 * 1000; // 10분
   var LOCAL_CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7일 (첫 방문 후 다음 방문부터 바로 표시)
+  var CACHE_VERSION = 2; // 캐시 구조 변경 시 올려서 기존 잘못된 캐시 무효화 (다른 테스트 섞임 방지)
 
   async function loadData() {
     try {
@@ -103,20 +104,24 @@
       if (dbId) {
         var cacheKey = 'words_cache_' + dbId;
         var instantData = null;
+        var skipCache = (params.get('nocache') === '1' || params.get('nocache') === 'true');
 
-        // 1) 캐시 시도 — sessionStorage(이번 탭) → localStorage(과거 방문). 같은 dbId만 사용해 내용 섞임 없음.
-        try {
-          var raw = sessionStorage.getItem(cacheKey);
-          if (!raw) raw = localStorage.getItem(cacheKey);
-          if (raw) {
-            var cached = JSON.parse(raw);
-            var age = Date.now() - (cached.ts || 0);
-            var ttl = age < CACHE_TTL_MS ? CACHE_TTL_MS : LOCAL_CACHE_TTL_MS;
-            if (age < ttl && cached.words && cached.words.length > 0) {
-              instantData = { setTitle: cached.setTitle || '', themeLabel: cached.themeLabel || '', categoryLabel: cached.categoryLabel || '', words: cached.words };
+        // 1) 캐시 시도 — nocache=1이면 스킵. sessionStorage → localStorage. 버전·dbId 일치만 사용 (다른 테스트 섞임 방지)
+        if (!skipCache) {
+          try {
+            var raw = sessionStorage.getItem(cacheKey);
+            if (!raw) raw = localStorage.getItem(cacheKey);
+            if (raw) {
+              var cached = JSON.parse(raw);
+              var verOk = (cached.v === CACHE_VERSION);
+              var age = Date.now() - (cached.ts || 0);
+              var ttl = age < CACHE_TTL_MS ? CACHE_TTL_MS : LOCAL_CACHE_TTL_MS;
+              if (verOk && age < ttl && cached.words && cached.words.length > 0) {
+                instantData = { setTitle: cached.setTitle || '', themeLabel: cached.themeLabel || '', categoryLabel: cached.categoryLabel || '', words: cached.words };
+              }
             }
-          }
-        } catch (e) {}
+          } catch (e) {}
+        }
 
         // 2) 캐시 없으면 정적 JSON (연결사·인칭대명사 첫 방문에도 바로 표시)
         if (!instantData && (dbId === CONNECTOR_DB_ID || isConnectorPage)) {
@@ -175,7 +180,7 @@
                 var view = (window.location.hash || '#cards').slice(1) || 'cards';
                 if (view === 'cards') renderCard();
                 try {
-                  var payload = JSON.stringify({ setTitle: setTitle, themeLabel: themeLabel, categoryLabel: categoryLabel, words: allWords, ts: Date.now() });
+                  var payload = JSON.stringify({ v: CACHE_VERSION, setTitle: setTitle, themeLabel: themeLabel, categoryLabel: categoryLabel, words: allWords, ts: Date.now() });
                   sessionStorage.setItem('words_cache_' + id, payload);
                   localStorage.setItem('words_cache_' + id, payload);
                 } catch (e) {}
@@ -207,6 +212,7 @@
           data = await res.json();
           try {
             var payload = JSON.stringify({
+              v: CACHE_VERSION,
               setTitle: data.setTitle || '',
               themeLabel: (data.themeLabel && data.themeLabel.trim()) || '',
               categoryLabel: (data.categoryLabel && data.categoryLabel.trim()) || '',
