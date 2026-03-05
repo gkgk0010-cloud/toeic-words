@@ -107,7 +107,7 @@ module.exports = async function handler(req, res) {
     const categoryId = findPropIdByOrder(schema, ['구분', '분류', '종류', '품사', '품사구분', '인칭', '인칭/수']);
 
     const keyId = useWideTable ? null : findPropIdByOrder(schema, ['키워드', 'keyword', 'Keyword', 'Name', '단어', '주격', '목적격', '소유격', '이름', '제목', '구분']);
-    const meaningId = findPropIdByOrder(schema, ['뜻/설명', '뜻', 'meaning', 'Meaning', '구분', '분류', '주격', '소유격', '목적격']);
+    const meaningId = findPropIdByOrder(schema, ['뜻/설명', '뜻', '의미', 'meaning', 'Meaning', '설명', '정의', '해석', '한글 뜻', '구분', '분류', '주격', '소유격', '목적격']);
     const exampleId = findPropId(schema, ['예문', 'example', 'Example', '소유격', '목적격']);
     const themeId = useWideTable ? null : findPropIdByOrder(schema, ['격', 'case', 'Case', '테마', 'theme', 'Theme', '시제', '품사', '품사구분', '카테고리', '구분', '분류']);
 

@@ -78,7 +78,7 @@
 
   var CACHE_TTL_MS = 10 * 60 * 1000; // 10분
   var LOCAL_CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7일 (첫 방문 후 다음 방문부터 바로 표시)
-  var CACHE_VERSION = 3; // 캐시 구조 변경 시 올려서 기존 잘못된 캐시 무효화 (품사 컬럼 인식 후 재로드)
+  var CACHE_VERSION = 4; // 캐시 무효화 (뜻 컬럼 추가 인식 후 재로드)
 
   async function loadData() {
     try {
@@ -591,7 +591,7 @@
     const fb = $('#quizFeedback');
     fb.classList.remove('hidden');
     fb.classList.add(correct ? 'correct' : 'wrong');
-    var mainText = correct ? '정답!' : '오답. 정답: ' + correctLabel;
+    var mainText = correct ? '정답! (+5점)' : '오답. 정답: ' + correctLabel;
     var hintParts = [];
     if (currentQuizWord.meaning && String(currentQuizWord.meaning).trim()) {
       hintParts.push('뜻: ' + String(currentQuizWord.meaning).trim());
