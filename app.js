@@ -341,6 +341,12 @@
       $('#cardExample').textContent = '의미: ' + (meaningParts.length ? meaningParts.join(', ') : '—');
       $('#cardThemeLine').textContent = '격: ' + (themesLabel || '—');
       $('#cardThemeBadge').textContent = cat || themesLabel || '—';
+    } else if (_dbIdFromUrl === BASIC_VOCAB_DB_ID) {
+      // 기본어휘품사구별: 품사 + 뜻 함께 표시 (퀴즈는 품사만)
+      $('#cardThemeBadge').textContent = themesLabel || '—';
+      $('#cardThemeLine').textContent = (themesLabel ? '품사: ' + themesLabel : '—');
+      $('#cardMeaning').textContent = word.meaning ? '뜻: ' + word.meaning : '—';
+      $('#cardExample').textContent = word.example || '';
     } else {
       $('#cardMeaning').textContent = word.meaning;
       $('#cardExample').textContent = word.example;
@@ -490,6 +496,47 @@
       ' ' + pad(kst.getUTCHours()) + ':' + pad(kst.getUTCMinutes()) + ':' + pad(kst.getUTCSeconds());
   }
 
+  /** 현재 월 YYYY-MM (한국 시간) */
+  function monthStrKst() {
+    var kst = new Date(Date.now() + (9 * 60 * 60 * 1000));
+    return kst.getUTCFullYear() + '-' + ('0' + (kst.getUTCMonth() + 1)).slice(-2);
+  }
+
+  async function addWordsScore(uid, isCorrect) {
+    if (!uid || uid === 'guest') return;
+    var cfg = window.APP_CONFIG;
+    if (!cfg || !cfg.SUPABASE_URL || !cfg.SUPABASE_ANON_KEY) return;
+    var delta = isCorrect ? 5 : 0;
+    if (delta === 0) return;
+    var sheetName = 'User_Profile_' + monthStrKst();
+    try {
+      var getRes = await fetch(cfg.SUPABASE_URL + '/rest/v1/students?User%20ID=eq.' + encodeURIComponent(uid) + '&__sheet_name=eq.' + encodeURIComponent(sheetName) + '&select=Score', {
+        headers: { 'apikey': cfg.SUPABASE_ANON_KEY, 'Authorization': 'Bearer ' + cfg.SUPABASE_ANON_KEY }
+      });
+      if (!getRes.ok) return;
+      var rows = await getRes.json();
+      if (!rows || rows.length === 0) return;
+      var currentScore = Number(rows[0].Score) || 0;
+      var newScore = Math.max(0, currentScore + delta);
+      var kst = new Date(Date.now() + 9 * 3600000);
+      var pad = function (n) { return (n < 10 ? '0' : '') + n; };
+      var nowKor = kst.getUTCFullYear() + '-' + pad(kst.getUTCMonth() + 1) + '-' + pad(kst.getUTCDate()) + ' ' + pad(kst.getUTCHours()) + ':' + pad(kst.getUTCMinutes()) + ':' + pad(kst.getUTCSeconds());
+      var patchRes = await fetch(cfg.SUPABASE_URL + '/rest/v1/students?User%20ID=eq.' + encodeURIComponent(uid) + '&__sheet_name=eq.' + encodeURIComponent(sheetName), {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          'apikey': cfg.SUPABASE_ANON_KEY,
+          'Authorization': 'Bearer ' + cfg.SUPABASE_ANON_KEY,
+          'Prefer': 'return=minimal'
+        },
+        body: JSON.stringify({ 'Score': String(newScore), 'Last Active': nowKor })
+      });
+      if (!patchRes.ok) console.warn('words score update failed:', patchRes.status);
+    } catch (e) {
+      console.warn('addWordsScore failed:', e);
+    }
+  }
+
   async function logAnswer(correct) {
     const cfg = window.APP_CONFIG;
     if (!cfg || !cfg.SUPABASE_URL || !cfg.SUPABASE_ANON_KEY) return;
@@ -520,6 +567,7 @@
     } catch (e) {
       console.warn('answer_logs insert failed:', e);
     }
+    addWordsScore(studentId, correct);
   }
 
   function onQuizChoice(ev) {
@@ -543,7 +591,17 @@
     const fb = $('#quizFeedback');
     fb.classList.remove('hidden');
     fb.classList.add(correct ? 'correct' : 'wrong');
-    fb.textContent = correct ? '정답!' : '오답. 정답: ' + correctLabel;
+    var mainText = correct ? '정답!' : '오답. 정답: ' + correctLabel;
+    var hintParts = [];
+    if (currentQuizWord.meaning && String(currentQuizWord.meaning).trim()) {
+      hintParts.push('뜻: ' + String(currentQuizWord.meaning).trim());
+    }
+    if (currentQuizWord.example && String(currentQuizWord.example).trim()) {
+      hintParts.push('예: ' + String(currentQuizWord.example).trim());
+    }
+    var esc = function (s) { return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); };
+    var hintHtml = hintParts.length ? '<br>' + hintParts.map(function (p) { return '<span class="quiz-hint">' + esc(p) + '</span>'; }).join('<br>') : '';
+    fb.innerHTML = mainText + hintHtml;
     $('#quizScore').textContent = quizScore.correct + ' / ' + quizScore.total;
 
     logAnswer(correct);

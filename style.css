@@ -255,6 +255,13 @@ html, body {
   border-radius: 12px;
   font-size: 0.95rem;
 }
+.quiz-feedback .quiz-hint {
+  display: block;
+  margin-top: 8px;
+  font-size: 0.85rem;
+  opacity: 0.9;
+  line-height: 1.4;
+}
 .quiz-nav {
   margin-top: 24px;
   display: flex;
