@@ -78,7 +78,7 @@
     setTimeout(function() {
       var s = document.getElementById('initStatus');
       if (s && s.textContent.indexOf('로딩 중') >= 0) {
-        s.innerHTML = '로딩이 느립니다. 잠시만 기다려 주세요… (10초 후에도 안 되면 <strong>Ctrl+Shift+R</strong> 강력 새로고침)';
+        s.innerHTML = '로딩이 느립니다. 잠시만 기다려 주세요… (20초 후에도 안 되면 <strong>Ctrl+Shift+R</strong> 강력 새로고침)';
         s.style.color = '#b45309';
       }
     }, 4000);
@@ -88,7 +88,7 @@
         s.innerHTML = '스크립트가 끝나지 않았습니다. <strong>Ctrl+Shift+R</strong> 강력 새로고침 후 다시 열어 주세요.';
         s.style.color = '#c00';
       }
-    }, 12000);
+    }, 20000);
   </script>
 </body>
 </html>

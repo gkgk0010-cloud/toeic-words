@@ -39,6 +39,7 @@
   const isConnectorPage = !!(typeof window !== 'undefined' && window.FORCE_DB_ID);
   var CONNECTOR_DB_ID = '2fa6e4c35a0e81cda20ac619508bbeea';
   var PRONOUN_DB_ID = '3016e4c35a0e807ea96af840fc6f6a6a';
+  var BASIC_VOCAB_DB_ID = '31a6e4c35a0e80dfad37f2231f41438d';
   let allWords = [];
   let filteredWords = [];
   let quizWordOrder = []; // 퀴즈 시 매번 셔플된 순서
@@ -77,7 +78,7 @@
 
   var CACHE_TTL_MS = 10 * 60 * 1000; // 10분
   var LOCAL_CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7일 (첫 방문 후 다음 방문부터 바로 표시)
-  var CACHE_VERSION = 2; // 캐시 구조 변경 시 올려서 기존 잘못된 캐시 무효화 (다른 테스트 섞임 방지)
+  var CACHE_VERSION = 3; // 캐시 구조 변경 시 올려서 기존 잘못된 캐시 무효화 (품사 컬럼 인식 후 재로드)
 
   async function loadData() {
     try {
@@ -142,6 +143,17 @@
               var pronData = await pronRes.json();
               if (pronData.words && pronData.words.length > 0) {
                 instantData = { setTitle: pronData.setTitle || '인칭대명사표', themeLabel: pronData.themeLabel || '구분', words: pronData.words };
+              }
+            }
+          } catch (e) {}
+        }
+        if (!instantData && dbId === BASIC_VOCAB_DB_ID) {
+          try {
+            var basicRes = await fetch('data/basic-vocab-words.json?t=' + Date.now(), { cache: 'no-store' });
+            if (basicRes.ok) {
+              var basicData = await basicRes.json();
+              if (basicData.words && basicData.words.length > 0) {
+                instantData = { setTitle: basicData.setTitle || '기본어휘품사구별', themeLabel: basicData.themeLabel || '품사', categoryLabel: basicData.categoryLabel || '', words: basicData.words };
               }
             }
           } catch (e) {}

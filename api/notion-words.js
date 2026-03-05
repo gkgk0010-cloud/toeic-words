@@ -104,12 +104,12 @@ module.exports = async function handler(req, res) {
       return name || '';
     }
     const useWideTable = Object.keys(caseColumnIds).length >= 2;
-    const categoryId = findPropIdByOrder(schema, ['구분', '분류', '종류', '인칭', '인칭/수']);
+    const categoryId = findPropIdByOrder(schema, ['구분', '분류', '종류', '품사', '품사구분', '인칭', '인칭/수']);
 
     const keyId = useWideTable ? null : findPropIdByOrder(schema, ['키워드', 'keyword', 'Keyword', 'Name', '단어', '주격', '목적격', '소유격', '이름', '제목', '구분']);
     const meaningId = findPropIdByOrder(schema, ['뜻/설명', '뜻', 'meaning', 'Meaning', '구분', '분류', '주격', '소유격', '목적격']);
     const exampleId = findPropId(schema, ['예문', 'example', 'Example', '소유격', '목적격']);
-    const themeId = useWideTable ? null : findPropIdByOrder(schema, ['격', 'case', 'Case', '테마', 'theme', 'Theme', '시제', '카테고리', '구분', '분류']);
+    const themeId = useWideTable ? null : findPropIdByOrder(schema, ['격', 'case', 'Case', '테마', 'theme', 'Theme', '시제', '품사', '품사구분', '카테고리', '구분', '분류']);
 
     const themeLabel = useWideTable ? '격' : (themeId && schema[themeId] && schema[themeId].name ? schema[themeId].name : '테마');
     const categoryLabel = categoryId && schema[categoryId] && schema[categoryId].name ? schema[categoryId].name : '분류';
