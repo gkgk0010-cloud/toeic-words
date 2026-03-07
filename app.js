@@ -655,18 +655,12 @@
     if (s) s.style.display = 'none';
   }
 
-  // 나가기: 퀴즈→history.go(-2), 카드→history.go(-1) (똑패스 앱으로 복귀). 웹 새 탭이면 window.close()
+  // 나가기: 별도 브라우저로 열리면 window.close()로 창 닫기 (앱으로 복귀)
   document.getElementById('btn-exit-quiz')?.addEventListener('click', function () {
     if (window.opener) {
       try { window.opener.focus(); } catch (e) {}
     }
-    var currentView = parseHash();
-    var steps = (currentView === 'quiz') ? 2 : 1; // 퀴즈: 카드 건너뛰고 똑패스로, 카드: 1단계 뒤로
-    if (window.history.length > steps) {
-      window.history.go(-steps);
-    } else {
-      window.close();
-    }
+    window.close();
   });
 
   // ——— 초기화 ———
