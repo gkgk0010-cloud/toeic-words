@@ -655,12 +655,17 @@
     if (s) s.style.display = 'none';
   }
 
-  // 나가기: 똑패스에서 연 창이면 닫고, 아니면 그냥 닫기 시도
+  // 나가기: 앱(WebView)에서는 history.back(), 웹(새 탭)에서는 window.close()
   document.getElementById('btn-exit-quiz')?.addEventListener('click', function () {
     if (window.opener) {
       try { window.opener.focus(); } catch (e) {}
     }
-    window.close();
+    // 앱 WebView: window.open이 같은 WebView에서 navigate하면 window.close() 무반응 → history.back() 사용
+    if (window.history.length > 1) {
+      window.history.back();
+    } else {
+      window.close();
+    }
   });
 
   // ——— 초기화 ———
