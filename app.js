@@ -64,7 +64,7 @@
     if (view) view.classList.remove('hidden');
     if (link) link.classList.add('active');
     const exitBtn = document.getElementById('btn-exit-quiz');
-    if (exitBtn) exitBtn.style.display = (name === 'quiz') ? 'inline-block' : 'none';
+    if (exitBtn) exitBtn.style.display = 'inline-block'; // 카드·퀴즈 둘 다 나가기 표시
     if (name === 'cards') renderCard();
     if (name === 'quiz') startQuiz();
   }
@@ -655,14 +655,15 @@
     if (s) s.style.display = 'none';
   }
 
-  // 나가기: 앱(WebView)에서는 history.back(), 웹(새 탭)에서는 window.close()
+  // 나가기: 퀴즈→history.go(-2), 카드→history.go(-1) (똑패스 앱으로 복귀). 웹 새 탭이면 window.close()
   document.getElementById('btn-exit-quiz')?.addEventListener('click', function () {
     if (window.opener) {
       try { window.opener.focus(); } catch (e) {}
     }
-    // 앱 WebView: window.open이 같은 WebView에서 navigate하면 window.close() 무반응 → history.back() 사용
-    if (window.history.length > 1) {
-      window.history.back();
+    var currentView = parseHash();
+    var steps = (currentView === 'quiz') ? 2 : 1; // 퀴즈: 카드 건너뛰고 똑패스로, 카드: 1단계 뒤로
+    if (window.history.length > steps) {
+      window.history.go(-steps);
     } else {
       window.close();
     }
