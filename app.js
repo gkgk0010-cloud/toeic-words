@@ -393,7 +393,7 @@
   }
 
   function pickChoices(correctWord, count) {
-    const others = filteredWords.filter(w => w.keyword !== correctWord.keyword);
+    const others = allWords.filter(w => w.keyword !== correctWord.keyword);
     const shuffled = shuffle(others);
     const choices = [correctWord, ...shuffled.slice(0, count - 1)];
     return shuffle(choices);
@@ -413,9 +413,9 @@
     return shuffle(choices);
   }
 
-  /** 연결사: 데이터에서 나온 카테고리 목록 (중복 제거) */
+  /** 연결사: 데이터에서 나온 카테고리 목록 (중복 제거) - 퀴즈는 전체 기준 */
   function getUniqueCategories() {
-    return [...new Set(filteredWords.flatMap(function (w) { return getCorrectThemes(w); }))].filter(Boolean).sort();
+    return [...new Set(allWords.flatMap(function (w) { return getCorrectThemes(w); }))].filter(Boolean).sort();
   }
 
   function pickCategoryChoices(primary, allCats, count) {
@@ -428,8 +428,8 @@
   }
 
   function startQuiz() {
-    applyFilter(true);
-    quizWordOrder = shuffle([...filteredWords]);
+    // 퀴즈는 테마 필터 무관하게 항상 전체 단어로 진행
+    quizWordOrder = shuffle([...allWords]);
     quizIndex = 0;
     quizScore = { correct: 0, total: 0 };
     nextQuiz();
