@@ -40,6 +40,7 @@
   var CONNECTOR_DB_ID = '2fa6e4c35a0e81cda20ac619508bbeea';
   var PRONOUN_DB_ID = '3016e4c35a0e807ea96af840fc6f6a6a';
   var BASIC_VOCAB_DB_ID = '31a6e4c35a0e80dfad37f2231f41438d';
+  var PARTICIPLE_DB_ID = '32a6e4c35a0e80128127ebb79d808eb8';
   let allWords = [];
   let filteredWords = [];
   let quizWordOrder = []; // 퀴즈 시 매번 셔플된 순서
@@ -418,6 +419,20 @@
     return [...new Set(allWords.flatMap(function (w) { return getCorrectThemes(w); }))].filter(Boolean).sort();
   }
 
+  /** 분사 퀴즈: 반대 분사형 생성 (wrong choice용) */
+  function getOppositeParticipleForm(keyword, tema) {
+    var irregulars = { 'written': 'writing', 'writing': 'written' };
+    if (irregulars[keyword]) return irregulars[keyword];
+    if (tema === 'ving') {
+      return keyword.slice(0, -3) + 'ed';
+    } else {
+      if (keyword.endsWith('ied')) return keyword.slice(0, -3) + 'ying';
+      var stripD = keyword.slice(0, -1);
+      if (stripD.endsWith('e')) return stripD.slice(0, -1) + 'ing';
+      return keyword.slice(0, -2) + 'ing';
+    }
+  }
+
   function pickCategoryChoices(primary, allCats, count) {
     if (!allCats.length || !primary) return [];
     var others = allCats.filter(function (c) { return c !== primary; });
@@ -432,6 +447,7 @@
     quizWordOrder = shuffle([...allWords]);
     quizIndex = 0;
     quizScore = { correct: 0, total: 0 };
+    quizMode = (_dbIdFromUrl === PARTICIPLE_DB_ID) ? 'participle' : 'theme';
     nextQuiz();
   }
 
@@ -453,6 +469,31 @@
     if (progressEl) progressEl.textContent = (quizIndex + 1) + ' / ' + quizWordOrder.length + ' 문제';
     currentQuizWord = quizWordOrder[quizIndex];
     quizAnswered = false;
+
+    // 분사 퀴즈: 예문 빈칸 + 2지선다
+    if (quizMode === 'participle') {
+      var pWord = currentQuizWord;
+      var exFull = pWord.example || '';
+      var exEn = exFull.indexOf(' / ') >= 0 ? exFull.split(' / ')[0] : exFull;
+      var safeKw = pWord.keyword.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      var exWithBlank = exEn.replace(new RegExp('\\b' + safeKw + '\\b', 'i'), '_______');
+      var pTema = pWord.theme || (pWord.themes && pWord.themes[0]) || 'ving';
+      var correctForm = pWord.keyword;
+      var wrongForm = getOppositeParticipleForm(correctForm, pTema);
+      var pChoices = shuffle([correctForm, wrongForm]);
+      if (progressEl) progressEl.textContent = (quizIndex + 1) + ' / ' + quizWordOrder.length + ' 문제';
+      $('#quizWord').textContent = exWithBlank;
+      $('#quizQuestion').textContent = '빈칸에 알맞은 분사 형태를 고르세요.';
+      $('#quizChoices').innerHTML = pChoices.map(function(t) {
+        return '<li data-theme="' + t.replace(/"/g, '&quot;') + '">' + t + '</li>';
+      }).join('');
+      $('#quizFeedback').className = 'quiz-feedback hidden';
+      $('#quizFeedback').textContent = '';
+      $('#quizScore').textContent = quizScore.correct + ' / ' + quizScore.total;
+      $$('#quizChoices li').forEach(li => { li.addEventListener('click', onQuizChoice); });
+      return;
+    }
+
     const correctThemes = getCorrectThemes(currentQuizWord);
     const primaryTheme = correctThemes[0];
     let choices;
@@ -574,9 +615,18 @@
     if (quizAnswered) return;
     const li = ev.currentTarget;
     const theme = li.getAttribute('data-theme');
-    const correctThemes = getCorrectThemes(currentQuizWord);
-    const correct = correctThemes.includes(theme);
-    const correctLabel = correctThemes.join(', ') + ' ' + themeLabel;
+    let correctThemes, correct, correctLabel;
+
+    if (quizMode === 'participle') {
+      correctThemes = [currentQuizWord.keyword];
+      correct = (theme === currentQuizWord.keyword);
+      correctLabel = currentQuizWord.keyword;
+    } else {
+      correctThemes = getCorrectThemes(currentQuizWord);
+      correct = correctThemes.includes(theme);
+      correctLabel = correctThemes.join(', ') + ' ' + themeLabel;
+    }
+
     quizAnswered = true;
     quizScore.total++;
     if (correct) quizScore.correct++;
