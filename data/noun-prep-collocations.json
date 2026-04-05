@@ -1,0 +1,545 @@
+{
+  "setTitle": "명사 어휘 및 콜로케이션",
+  "words": [
+    {
+      "keyword": "expansion",
+      "meaning": "~로의 확장",
+      "example": "The firm announced an expansion into the Asian market.",
+      "theme": "into"
+    },
+    {
+      "keyword": "resolution",
+      "meaning": "~에 대한 해결책 (= answer to, key to)",
+      "example": "We are still looking for a resolution to the dispute.",
+      "theme": "to"
+    },
+    {
+      "keyword": "answer",
+      "meaning": "~에 대한 답·해결책",
+      "example": "This could be the answer to our supply problem.",
+      "theme": "to"
+    },
+    {
+      "keyword": "key",
+      "meaning": "~에 대한 열쇠·핵심",
+      "example": "Training is the key to higher productivity.",
+      "theme": "to"
+    },
+    {
+      "keyword": "alternative",
+      "meaning": "~에의 대안",
+      "example": "We need a cheaper alternative to this material.",
+      "theme": "to"
+    },
+    {
+      "keyword": "access",
+      "meaning": "~로의 접근·접근 권한",
+      "example": "Employees have access to the online database.",
+      "theme": "to"
+    },
+    {
+      "keyword": "addition",
+      "meaning": "~로의 추가물",
+      "example": "The bonus is a welcome addition to the benefits package.",
+      "theme": "to"
+    },
+    {
+      "keyword": "adjustment",
+      "meaning": "~로의 수정 (= revision to, modification to)",
+      "example": "Staff made a quick adjustment to the new schedule.",
+      "theme": "to"
+    },
+    {
+      "keyword": "admission",
+      "meaning": "~로의 입장(허가)·입학",
+      "example": "Admission to the museum is free on Sundays.",
+      "theme": "to"
+    },
+    {
+      "keyword": "approach",
+      "meaning": "~에 대한 접근 방법",
+      "example": "We need a new approach to customer service.",
+      "theme": "to"
+    },
+    {
+      "keyword": "commitment",
+      "meaning": "~에 대한 헌신 (= dedication, devotion); contribution to는 ~에 대한 공헌",
+      "example": "The CEO stressed the firm's commitment to quality.",
+      "theme": "to"
+    },
+    {
+      "keyword": "contribution",
+      "meaning": "~에 대한 공헌·기여",
+      "example": "Her contribution to the project was significant.",
+      "theme": "to"
+    },
+    {
+      "keyword": "enhancement",
+      "meaning": "~로의 개선 (= improvement to)",
+      "example": "The software is an enhancement to our reporting system.",
+      "theme": "to"
+    },
+    {
+      "keyword": "excursion",
+      "meaning": "~로의 왕복 여행·소풍",
+      "example": "The package includes an excursion to the historic site.",
+      "theme": "to"
+    },
+    {
+      "keyword": "investigation",
+      "meaning": "~에 대한 조사",
+      "example": "An investigation into the accident is under way.",
+      "theme": "into"
+    },
+    {
+      "keyword": "objection",
+      "meaning": "~에 대한 반대",
+      "example": "There was no objection to the proposed budget.",
+      "theme": "to"
+    },
+    {
+      "keyword": "promotion",
+      "meaning": "~로의 승진 (= advancement to)",
+      "example": "She received a promotion to department manager.",
+      "theme": "to"
+    },
+    {
+      "keyword": "proximity",
+      "meaning": "~에 대한 근접성",
+      "example": "The hotel's proximity to the airport is convenient.",
+      "theme": "to"
+    },
+    {
+      "keyword": "reaction",
+      "meaning": "~에 대한 반응",
+      "example": "The market reaction to the news was positive.",
+      "theme": "to"
+    },
+    {
+      "keyword": "transition",
+      "meaning": "~로의 전환·이행",
+      "example": "The company is planning a transition to renewable energy.",
+      "theme": "to"
+    },
+    {
+      "keyword": "transfer",
+      "meaning": "~로의 전근·이동 (= relocation to)",
+      "example": "He requested a transfer to the Seoul office.",
+      "theme": "to"
+    },
+    {
+      "keyword": "demand",
+      "meaning": "~에 대한 수요·요청",
+      "example": "There is strong public demand for better housing.",
+      "theme": "for"
+    },
+    {
+      "keyword": "expenditure",
+      "meaning": "~에 대한 지출·비용",
+      "example": "Annual expenditure for training has increased.",
+      "theme": "for"
+    },
+    {
+      "keyword": "nomination",
+      "meaning": "~을 위한 임명·후보 지명",
+      "example": "She received a nomination for the leadership award.",
+      "theme": "for"
+    },
+    {
+      "keyword": "requirement",
+      "meaning": "~을 위한 필요 조건",
+      "example": "The main requirement for the job is three years' experience.",
+      "theme": "for"
+    },
+    {
+      "keyword": "recommendation",
+      "meaning": "~에 대한 추천·권고",
+      "example": "The doctor made a recommendation for rest.",
+      "theme": "for"
+    },
+    {
+      "keyword": "award",
+      "meaning": "~ 때문에 받는 상",
+      "example": "She won an award for innovation.",
+      "theme": "for"
+    },
+    {
+      "keyword": "compensation",
+      "meaning": "~ 때문에 받는 보상",
+      "example": "The company offered compensation for the delay.",
+      "theme": "for"
+    },
+    {
+      "keyword": "goal",
+      "meaning": "~ 목표",
+      "example": "We set a sales goal for the quarter.",
+      "theme": "for"
+    },
+    {
+      "keyword": "justification",
+      "meaning": "~에 대한 정당성·이유",
+      "example": "There is no justification for the price increase.",
+      "theme": "for"
+    },
+    {
+      "keyword": "need",
+      "meaning": "~에 대한 필요성",
+      "example": "There is a growing need for skilled workers.",
+      "theme": "for"
+    },
+    {
+      "keyword": "passion",
+      "meaning": "~에 대한 열정 (= enthusiasm for)",
+      "example": "He has a passion for digital marketing.",
+      "theme": "for"
+    },
+    {
+      "keyword": "preference",
+      "meaning": "~에 대한 선호",
+      "example": "Customers showed a preference for the larger model.",
+      "theme": "for"
+    },
+    {
+      "keyword": "procedure",
+      "meaning": "~에 대한 절차",
+      "example": "Follow the procedure for submitting expense claims.",
+      "theme": "for"
+    },
+    {
+      "keyword": "recognition",
+      "meaning": "~ 때문에 받는 인정·표창 [불가산 명사로 쓰임]",
+      "example": "She received recognition for her volunteer work.",
+      "theme": "for"
+    },
+    {
+      "keyword": "reputation",
+      "meaning": "~으로 인한 명성 [가산명사]",
+      "example": "The firm has a reputation for reliability.",
+      "theme": "for"
+    },
+    {
+      "keyword": "reimbursement",
+      "meaning": "~에 대한 상환·환급",
+      "example": "Employees may claim reimbursement for travel costs.",
+      "theme": "for"
+    },
+    {
+      "keyword": "reservation",
+      "meaning": "~을 위한 예약",
+      "example": "I have a reservation for two at seven.",
+      "theme": "for"
+    },
+    {
+      "keyword": "request",
+      "meaning": "~을 위한 요청",
+      "example": "We received a request for additional samples.",
+      "theme": "for"
+    },
+    {
+      "keyword": "a majority",
+      "meaning": "~의 대다수·대부분",
+      "example": "A majority of employees supported the plan.",
+      "theme": "of"
+    },
+    {
+      "keyword": "an array",
+      "meaning": "다양한 ~들",
+      "example": "The catalog offers an array of options.",
+      "theme": "of"
+    },
+    {
+      "keyword": "a diversity",
+      "meaning": "다양한 ~들",
+      "example": "The fair attracts a variety of vendors.",
+      "theme": "of"
+    },
+    {
+      "keyword": "price",
+      "meaning": "~의 가격",
+      "example": "The price of registration includes all materials.",
+      "theme": "of"
+    },
+    {
+      "keyword": "purpose",
+      "meaning": "~의 목적",
+      "example": "The purpose of the meeting is to review the budget.",
+      "theme": "of"
+    },
+    {
+      "keyword": "receipt",
+      "meaning": "~의 수령·인수",
+      "example": "Please confirm receipt of the shipment.",
+      "theme": "of"
+    },
+    {
+      "keyword": "remainder",
+      "meaning": "남은 ~",
+      "example": "We will finish the remainder of the work tomorrow.",
+      "theme": "of"
+    },
+    {
+      "keyword": "objective",
+      "meaning": "~의 목표",
+      "example": "The objective of the program is skills training.",
+      "theme": "of"
+    },
+    {
+      "keyword": "shortage",
+      "meaning": "~ 부족",
+      "example": "The city faces a shortage of affordable housing.",
+      "theme": "of"
+    },
+    {
+      "keyword": "threshold",
+      "meaning": "~라는 한계점·문지방",
+      "example": "The company is on the threshold of major growth.",
+      "theme": "of"
+    },
+    {
+      "keyword": "acceleration",
+      "meaning": "~의 증가·가속",
+      "example": "We saw an acceleration in online sales.",
+      "theme": "in"
+    },
+    {
+      "keyword": "change",
+      "meaning": "~에 대한 변화",
+      "example": "There was a sharp change in consumer behavior.",
+      "theme": "in"
+    },
+    {
+      "keyword": "increase",
+      "meaning": "~ 증가",
+      "example": "The report notes an increase in demand.",
+      "theme": "in"
+    },
+    {
+      "keyword": "decrease",
+      "meaning": "~ 감소",
+      "example": "The firm reported a decrease in inventory costs.",
+      "theme": "in"
+    },
+    {
+      "keyword": "advance",
+      "meaning": "~에서의 발전",
+      "example": "Recent advances in technology have helped us cut costs.",
+      "theme": "in"
+    },
+    {
+      "keyword": "confidence",
+      "meaning": "~에 대한 믿음·신뢰",
+      "example": "Investors have confidence in the new CEO.",
+      "theme": "in"
+    },
+    {
+      "keyword": "experience",
+      "meaning": "~의 경험",
+      "example": "We need someone with experience in logistics.",
+      "theme": "in"
+    },
+    {
+      "keyword": "expertise",
+      "meaning": "~의 전문 지식",
+      "example": "The team offers expertise in tax law.",
+      "theme": "in"
+    },
+    {
+      "keyword": "interest",
+      "meaning": "~에 대한 관심",
+      "example": "There is strong interest in the product.",
+      "theme": "in"
+    },
+    {
+      "keyword": "investment",
+      "meaning": "~에 대한 투자",
+      "example": "The board approved investment in new equipment.",
+      "theme": "in"
+    },
+    {
+      "keyword": "influence",
+      "meaning": "~에 대한 영향",
+      "example": "The policy had a positive effect on sales.",
+      "theme": "on"
+    },
+    {
+      "keyword": "inquiries",
+      "meaning": "~에 관한 문의",
+      "example": "Direct all inquiries about refunds to this desk.",
+      "theme": "about"
+    },
+    {
+      "keyword": "comment",
+      "meaning": "~에 대한 논평",
+      "example": "The CEO declined to comment on the rumor.",
+      "theme": "on"
+    },
+    {
+      "keyword": "conference",
+      "meaning": "~에 대한 회의",
+      "example": "She spoke at a conference on sustainable business.",
+      "theme": "on"
+    },
+    {
+      "keyword": "discount",
+      "meaning": "~에 대한 할인",
+      "example": "We offer a ten percent discount on bulk orders.",
+      "theme": "on"
+    },
+    {
+      "keyword": "emphasis",
+      "meaning": "~에 대한 강조 (동사는 emphasize + 목적어)",
+      "example": "The training puts emphasis on safety.",
+      "theme": "on"
+    },
+    {
+      "keyword": "perspective",
+      "meaning": "~에 대한 관점 (= view on, opinion on)",
+      "example": "The article offers a fresh perspective on the issue.",
+      "theme": "on"
+    },
+    {
+      "keyword": "refund",
+      "meaning": "~에 대한 환불",
+      "example": "You may claim a refund on faulty goods.",
+      "theme": "on"
+    },
+    {
+      "keyword": "reliance",
+      "meaning": "~에 대한 의존",
+      "example": "Reduced reliance on imports is a goal.",
+      "theme": "on"
+    },
+    {
+      "keyword": "research",
+      "meaning": "~에 관한 연구",
+      "example": "The institute conducts research on renewable energy.",
+      "theme": "on"
+    },
+    {
+      "keyword": "session",
+      "meaning": "~에 관한 세미나",
+      "example": "There is a seminar on workplace safety at noon.",
+      "theme": "on"
+    },
+    {
+      "keyword": "survey",
+      "meaning": "~에 대한 여론 조사",
+      "example": "We conducted a survey on employee satisfaction.",
+      "theme": "on"
+    },
+    {
+      "keyword": "agreement",
+      "meaning": "~와의 협정",
+      "example": "The company signed an agreement with the union.",
+      "theme": "with"
+    },
+    {
+      "keyword": "communication",
+      "meaning": "~와의 교신",
+      "example": "Open communication with clients is essential.",
+      "theme": "with"
+    },
+    {
+      "keyword": "conjunction",
+      "meaning": "~와 함께",
+      "example": "The drug is used in conjunction with other treatment.",
+      "theme": "with"
+    },
+    {
+      "keyword": "familiarity",
+      "meaning": "~에 대한 친숙함·숙지",
+      "example": "Familiarity with the software is required.",
+      "theme": "with"
+    },
+    {
+      "keyword": "interaction",
+      "meaning": "~와의 상호작용",
+      "example": "Training includes interaction with customers.",
+      "theme": "with"
+    },
+    {
+      "keyword": "partnership",
+      "meaning": "~와의 제휴",
+      "example": "We formed a partnership with a local supplier.",
+      "theme": "with"
+    },
+    {
+      "keyword": "problem",
+      "meaning": "~의 문제",
+      "example": "We are having a problem with the network.",
+      "theme": "with"
+    },
+    {
+      "keyword": "satisfaction",
+      "meaning": "~에 대한 만족",
+      "example": "The survey measured satisfaction with our service.",
+      "theme": "with"
+    },
+    {
+      "keyword": "in preparation",
+      "meaning": "~에 대비하여",
+      "example": "Staff worked late in preparation for the audit.",
+      "theme": "for"
+    },
+    {
+      "keyword": "in exchange",
+      "meaning": "~과 맞바꾸어",
+      "example": "He agreed to resign in exchange for severance pay.",
+      "theme": "for"
+    },
+    {
+      "keyword": "in accordance",
+      "meaning": "~에 일치하여 따름 (= in compliance with)",
+      "example": "The refund was issued in accordance with policy.",
+      "theme": "with"
+    },
+    {
+      "keyword": "in observance",
+      "meaning": "~을 준수하며",
+      "example": "The office will close in observance of the holiday.",
+      "theme": "of"
+    },
+    {
+      "keyword": "in response",
+      "meaning": "~에 응하여·대응하여 (족보 표기: in respond to)",
+      "example": "Prices were cut in response to competition.",
+      "theme": "to"
+    },
+    {
+      "keyword": "in comparison",
+      "meaning": "~와 비교해 볼 때",
+      "example": "Sales rose in comparison to last year.",
+      "theme": "to"
+    },
+    {
+      "keyword": "in appreciation",
+      "meaning": "~에 감사하여",
+      "example": "A bonus was given in appreciation of their effort.",
+      "theme": "of"
+    },
+    {
+      "keyword": "in anticipation",
+      "meaning": "~을 예상하고",
+      "example": "We stocked extra inventory in anticipation of demand.",
+      "theme": "of"
+    },
+    {
+      "keyword": "in collaboration",
+      "meaning": "~와 협력하여 (= in cooperation with, in consultation with)",
+      "example": "The study was done in collaboration with a university.",
+      "theme": "with"
+    },
+    {
+      "keyword": "in conjunction",
+      "meaning": "~과 함께 (= along with, together with)",
+      "example": "Use this cream in conjunction with the tablets.",
+      "theme": "with"
+    },
+    {
+      "keyword": "in recognition",
+      "meaning": "~을 인정하여",
+      "example": "He received an award in recognition of twenty years' service.",
+      "theme": "of"
+    }
+  ]
+}
