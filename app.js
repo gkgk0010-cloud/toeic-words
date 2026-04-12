@@ -68,6 +68,8 @@
   let currentQuizWord = null;
   let quizAnswered = false;
   let quizMode = 'theme'; // 이번 세트는 시제 맞추기만
+  /** 퀴즈 정답이 theme이 아니라 category(품사·구 등)인지 — onQuizChoice에서 사용 */
+  let quizGradeByCategory = false;
 
   const $ = (sel, el = document) => el.querySelector(sel);
   const $$ = (sel, el = document) => el.querySelectorAll(sel);
@@ -578,6 +580,7 @@
 
     $('#cardKeyword').textContent = word.keyword;
     const themesLabel = getCorrectThemes(word).join(', ');
+    var catStr = word.category && String(word.category).trim();
     if (themeLabel === '격') {
       // 뒷면: 구분만 + 의미(격별 설명, 코드 매핑) + 격
       var cat = word.category && String(word.category).trim() ? word.category : '';
@@ -590,8 +593,11 @@
     } else {
       $('#cardMeaning').textContent = word.meaning;
       $('#cardExample').textContent = word.example;
-      $('#cardThemeBadge').textContent = themesLabel || '—';
-      $('#cardThemeLine').textContent = (themesLabel || '—') + ' ' + (themeLabel + '에 씁니다');
+      /** 품사·구 DB에서 theme 미입력 시 배지에 category 표시 */
+      $('#cardThemeBadge').textContent = themesLabel || (catStr && categoryLabel ? catStr : '—');
+      $('#cardThemeLine').textContent = themesLabel
+        ? ((themesLabel || '—') + ' ' + (themeLabel + '에 씁니다'))
+        : (catStr && categoryLabel ? (categoryLabel + ': ' + catStr) : ((themesLabel || '—') + ' ' + (themeLabel + '에 씁니다')));
     }
     $('#cardIndex').textContent = (cardIndex + 1) + ' / ' + list.length;
     $('#cardPrev').disabled = cardIndex <= 0;
@@ -650,11 +656,19 @@
     return shuffle(choices);
   }
 
-  /** 단어당 정답 시제. theme 하나 또는 themes 배열(중복 정답) */
+  /** 단어당 정답 시제. theme 하나 또는 themes 배열(중복 정답). 품사·구 DB에서 theme 미입력이면 '현재'로 채우지 않음(퀴즈 오염 방지). */
   function getCorrectThemes(word) {
-    if (word.themes && Array.isArray(word.themes) && word.themes.length) return word.themes;
-    const t = word.theme || '현재';
-    return [t];
+    if (word.themes && Array.isArray(word.themes) && word.themes.length) return word.themes.map(String);
+    if (word.theme != null && String(word.theme).trim() !== '') return [String(word.theme).trim()];
+    if (categoryLabel && themeLabel !== '시제' && themeLabel !== '격') return [];
+    return ['현재'];
+  }
+
+  /** 필터된 단어 기준 고유 품사·구(category) 목록 */
+  function getUniqueCategoryValues() {
+    return [...new Set(filteredWords.map(function (w) {
+      return w.category && String(w.category).trim();
+    }).filter(Boolean))].sort();
   }
 
   function pickThemeChoices(primaryTheme, count) {
@@ -680,7 +694,16 @@
 
   function startQuiz() {
     applyFilter(true);
-    quizWordOrder = shuffle([...filteredWords]);
+    var list = filteredWords.slice();
+    /** 품사·구별 퀴즈: category 없는 행은 제외(정답 불가) */
+    if (categoryLabel && themeLabel !== '격') {
+      var uc = getUniqueCategoryValues();
+      if (uc.length >= 2) {
+        var withCat = list.filter(function (w) { return w.category && String(w.category).trim(); });
+        if (withCat.length >= 1) list = withCat;
+      }
+    }
+    quizWordOrder = shuffle(list);
     quizIndex = 0;
     quizScore = { correct: 0, total: 0 };
     nextQuiz();
@@ -704,23 +727,39 @@
     if (progressEl) progressEl.textContent = (quizIndex + 1) + ' / ' + quizWordOrder.length + ' 문제';
     currentQuizWord = quizWordOrder[quizIndex];
     quizAnswered = false;
+    quizGradeByCategory = false;
     const correctThemes = getCorrectThemes(currentQuizWord);
-    const primaryTheme = correctThemes[0];
+    const primaryTheme = correctThemes[0] || '현재';
     let choices;
     let questionText;
     const allCats = getUniqueCategories();
+    const uniqueCats = getUniqueCategoryValues();
+    const useCategoryQuiz = !!(categoryLabel && themeLabel !== '격' && uniqueCats.length >= 2 &&
+      currentQuizWord.category && String(currentQuizWord.category).trim());
+
     if (themeLabel === '격') {
       // 격 퀴즈: 선택지는 항상 주격·목적격·소유격·소유대명사·재귀대명사 중 4개 (같은 격만 나오는 것 방지)
       var caseChoices = CASE_TYPES.filter(function (c) { return allWords.some(function (w) { var t = getCorrectThemes(w); return t.indexOf(c) >= 0; }); });
       if (caseChoices.length < 2) caseChoices = CASE_TYPES.slice();
       choices = pickCategoryChoices(primaryTheme, caseChoices, 4);
       questionText = '이 단어는 무슨 격에 쓰이나요?';
+    } else if (useCategoryQuiz) {
+      // 기본어휘 품사·구별 등: 노션 category 기준 (theme 미입력 시 전부 '현재'로 오인되던 문제 수정)
+      quizGradeByCategory = true;
+      var primaryCat = String(currentQuizWord.category).trim();
+      choices = pickCategoryChoices(primaryCat, uniqueCats, 4);
+      questionText = '이 단어의 ' + (categoryLabel || '분류') + '은(는) 무엇인가요?';
     } else if (themeLabel === '시제' && allCats.length < 2) {
       choices = pickThemeChoices(primaryTheme, 4);
       questionText = '이 단어는 어느 ' + themeLabel + '에 쓰이나요?';
-    } else if (allCats.length >= 1) {
+    } else if (allCats.length >= 2) {
+      // 연결사·다중 시제 등: theme 값들로 선택지
       choices = pickCategoryChoices(primaryTheme, allCats, 4);
       questionText = isConnectorPage ? '이 연결사는 어떤 카테고리에 쓰이나요?' : ('이 단어는 어느 ' + themeLabel + '에 쓰이나요?');
+    } else if (allCats.length === 1) {
+      // theme 종류가 하나뿐이면 같은 값만 반복되는 것 방지 → 시제 네 가지(현재·과거·미래·현재완료)로 출제
+      choices = pickThemeChoices(primaryTheme, 4);
+      questionText = '이 단어는 어느 ' + themeLabel + '에 쓰이나요?';
     } else {
       choices = pickThemeChoices(primaryTheme, 4);
       questionText = '이 단어는 어느 ' + themeLabel + '에 쓰이나요?';
@@ -784,9 +823,14 @@
     if (quizAnswered) return;
     const li = ev.currentTarget;
     const theme = li.getAttribute('data-theme');
-    const correctThemes = getCorrectThemes(currentQuizWord);
+    var correctThemes = quizGradeByCategory && currentQuizWord.category
+      ? [String(currentQuizWord.category).trim()]
+      : getCorrectThemes(currentQuizWord);
+    if (!correctThemes.length && !quizGradeByCategory) correctThemes = ['현재'];
     const correct = correctThemes.includes(theme);
-    const correctLabel = correctThemes.join(', ') + ' ' + themeLabel;
+    const correctLabel = quizGradeByCategory
+      ? (correctThemes.join(', ') + ' (' + (categoryLabel || '분류') + ')')
+      : (correctThemes.join(', ') + ' ' + themeLabel);
     quizAnswered = true;
     quizScore.total++;
     if (correct) quizScore.correct++;
