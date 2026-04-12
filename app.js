@@ -437,7 +437,7 @@
       }
 
       if (dbId) {
-        var cacheKey = 'words_cache_' + dbId;
+        var cacheKey = 'words_cache_v3_' + dbId;
         var instantData = null;
 
         // 1) 캐시 시도 — sessionStorage(이번 탭) → localStorage(과거 방문). 같은 dbId만 사용해 내용 섞임 없음.
@@ -510,7 +510,7 @@
                 applyFilterUI();
                 var view = (window.location.hash || '#cards').slice(1) || 'cards';
                 if (view === 'cards') renderCard();
-                tryCacheWordsPayload('words_cache_' + id, { setTitle: setTitle, themeLabel: themeLabel, categoryLabel: categoryLabel, words: allWords, ts: Date.now() });
+                tryCacheWordsPayload('words_cache_v3_' + id, { setTitle: setTitle, themeLabel: themeLabel, categoryLabel: categoryLabel, words: allWords, ts: Date.now() });
               }
             }).catch(function () {});
           })(dbId);
@@ -912,7 +912,28 @@
     var studentId = (parseQueryKey(_hrefLog, 'student_id') || parseQueryKey(_hrefLog, 'user') || '').trim();
     var jogboSig = (parseQueryKey(_hrefLog, 'jogbo_sig') || '').trim();
 
-    /** Vercel api/jogbo-score — 삼성 인터넷 등 opener 끊겨도 Supabase에 직접 +5 (메인과 동일 서명) */
+    var jogboPayload = {
+      type: 'tokpass-jogbo-answer',
+      correct: !!correct,
+      tag: getTag(),
+      keyword: kw,
+      meaning: meaning
+    };
+    /** 예전 동작 우선: iframe 부모 또는 새 창 opener 로 전달 → 메인 index 에서 saveResult 로 점수 반영 (비밀키 불필요) */
+    try {
+      if (window.parent && window.parent !== window) {
+        window.parent.postMessage(jogboPayload, '*');
+        return;
+      }
+    } catch (_pm) {}
+    try {
+      if (window.opener && !window.opener.closed) {
+        window.opener.postMessage(jogboPayload, '*');
+        return;
+      }
+    } catch (_op) {}
+
+    /** 부모·opener 가 없을 때만(주소 직접 입력 등) 서버 보조 — 선택 사항, 환경변수 있으면 동작 */
     if (studentId && studentId !== 'guest' && jogboSig.length >= 16) {
       try {
         var origin = window.location.origin || '';
@@ -930,13 +951,6 @@
           var apiJson = await apiRes.json().catch(function () { return {}; });
           if (apiRes.ok && apiJson.newScore != null) {
             var ns = apiJson.newScore;
-            var sync = { type: 'tokpass-jogbo-score-sync', newScore: ns, correct: !!correct, tag: getTag() };
-            try {
-              if (window.parent && window.parent !== window) window.parent.postMessage(sync, '*');
-            } catch (_e1) {}
-            try {
-              if (window.opener && !window.opener.closed) window.opener.postMessage(sync, '*');
-            } catch (_e2) {}
             var hint = document.getElementById('jogboAppScoreLine');
             if (hint) {
               hint.textContent = correct
@@ -949,28 +963,6 @@
         }
       } catch (_api) {}
     }
-
-    var jogboPayload = {
-      type: 'tokpass-jogbo-answer',
-      correct: !!correct,
-      tag: getTag(),
-      keyword: kw,
-      meaning: meaning
-    };
-    /** 메인 앱 전체화면 iframe — 부모에서 saveResult·pushAnswerLog */
-    try {
-      if (window.parent && window.parent !== window) {
-        window.parent.postMessage(jogboPayload, '*');
-        return;
-      }
-    } catch (_pm) {}
-    /** 메인에서 window.open(외부 브라우저/새 창)으로 연 족보 — 예전처럼 opener로 동일 이벤트 전달 */
-    try {
-      if (window.opener && !window.opener.closed) {
-        window.opener.postMessage(jogboPayload, '*');
-        return;
-      }
-    } catch (_op) {}
 
     const cfg = window.APP_CONFIG;
     if (!cfg || !cfg.SUPABASE_URL || !cfg.SUPABASE_ANON_KEY) return;

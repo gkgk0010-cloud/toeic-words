@@ -16,6 +16,10 @@ function getPropPlain(page, prop) {
   if (p.title && p.title[0]) return p.title[0].plain_text || '';
   if (p.rich_text && p.rich_text[0]) return p.rich_text[0].plain_text || '';
   if (p.select && p.select.name) return p.select.name || '';
+  if (p.formula) {
+    if (p.formula.type === 'string' && p.formula.string != null) return String(p.formula.string);
+    if (p.formula.string != null) return String(p.formula.string);
+  }
   return '';
 }
 
@@ -125,8 +129,17 @@ module.exports = async function handler(req, res) {
 
     const keyId = useWideTable ? null : findPropIdByOrder(schema, ['키워드', 'keyword', 'Keyword', 'Name', '단어', '주격', '목적격', '소유격', '이름', '제목', '구분']);
     /** 뜻: 구분·분류는 품사 컬럼으로 쓰는 DB가 많아 여기 넣으면 뜻이 품사로 채워짐 → 제외 */
-    const meaningId = findPropIdByOrder(schema, ['뜻/설명', '뜻', 'meaning', 'Meaning', '주격', '소유격', '목적격']);
-    const exampleId = findPropId(schema, ['예문', 'example', 'Example', '소유격', '목적격']);
+    const meaningId = findPropIdByOrder(schema, [
+      '의미',
+      '뜻/설명',
+      '뜻',
+      'meaning',
+      'Meaning',
+      '설명',
+      '한글뜻',
+      '뜻(한글)'
+    ]);
+    const exampleId = findPropIdByOrder(schema, ['예문', 'example', 'Example']);
     /** 시제·카테고리(연결사 등). 품사/분류 컬럼은 categoryId와 동일하면 제외 */
     const themeId = useWideTable
       ? null
