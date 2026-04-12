@@ -910,7 +910,6 @@
     }
     var _hrefLog = window.location && window.location.href ? window.location.href : '';
     var studentId = (parseQueryKey(_hrefLog, 'student_id') || parseQueryKey(_hrefLog, 'user') || '').trim();
-    var jogboSig = (parseQueryKey(_hrefLog, 'jogbo_sig') || '').trim();
 
     var jogboPayload = {
       type: 'tokpass-jogbo-answer',
@@ -919,7 +918,7 @@
       keyword: kw,
       meaning: meaning
     };
-    /** 예전 동작 우선: iframe 부모 또는 새 창 opener 로 전달 → 메인 index 에서 saveResult 로 점수 반영 (비밀키 불필요) */
+    /** iframe 부모 또는 새 창 opener → 메인 똑패스 saveResult (별도 점수 API 없음) */
     try {
       if (window.parent && window.parent !== window) {
         window.parent.postMessage(jogboPayload, '*');
@@ -946,37 +945,6 @@
         return;
       }
     } catch (_op) {}
-
-    /** 부모·opener 가 없을 때만(주소 직접 입력 등) 서버 보조 — 선택 사항, 환경변수 있으면 동작 */
-    if (studentId && studentId !== 'guest' && jogboSig.length >= 16) {
-      try {
-        var origin = window.location.origin || '';
-        if (origin && /^https?:/i.test(origin)) {
-          var apiRes = await fetch(origin + '/api/jogbo-score', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              uid: studentId,
-              correct: !!correct,
-              tag: getTag(),
-              jogbo_sig: jogboSig
-            })
-          });
-          var apiJson = await apiRes.json().catch(function () { return {}; });
-          if (apiRes.ok && apiJson.newScore != null) {
-            var ns = apiJson.newScore;
-            var hint = document.getElementById('jogboAppScoreLine');
-            if (hint) {
-              hint.textContent = correct
-                ? ('📌 앱 점수 +5점 (누적 ' + ns + '점)')
-                : ('📌 누적 ' + ns + '점');
-              hint.classList.remove('hidden');
-            }
-            return;
-          }
-        }
-      } catch (_api) {}
-    }
 
     const cfg = window.APP_CONFIG;
     if (!cfg || !cfg.SUPABASE_URL || !cfg.SUPABASE_ANON_KEY) return;
