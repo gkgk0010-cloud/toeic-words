@@ -970,8 +970,8 @@
         var hint0 = document.getElementById('jogboAppScoreLine');
         if (hint0) {
           hint0.textContent = correct
-            ? '📌 똑패스에 전송함 · +5점 반영 대기…'
-            : '📌 똑패스에 전송함 · 오답 기록 대기…';
+            ? '📌 똑패스 전송 · 정답 +5점 반영 대기'
+            : '📌 똑패스 전송 · 감점 없음 · 응원할게요!';
           hint0.classList.remove('hidden');
         }
         return;
@@ -983,8 +983,8 @@
         var hint1 = document.getElementById('jogboAppScoreLine');
         if (hint1) {
           hint1.textContent = correct
-            ? '📌 똑패스에 전송함 · +5점 반영 대기…'
-            : '📌 똑패스에 전송함 · 오답 기록 대기…';
+            ? '📌 똑패스 전송 · 정답 +5점 반영 대기'
+            : '📌 똑패스 전송 · 감점 없음 · 응원할게요!';
           hint1.classList.remove('hidden');
         }
         return;
@@ -1059,7 +1059,9 @@
         if (m0) meanLine = '\n뜻: ' + m0;
       }
     }
-    fb.textContent = (correct ? '정답!' : ('오답. 정답: ' + correctLabel)) + meanLine;
+    fb.textContent = correct
+      ? ('✅ 정답! +5점 스코어에 반영돼요.' + meanLine)
+      : ('💪 아쉽지만 감점 없어요! 다음엔 맞춰보자.\n정답: ' + correctLabel + meanLine);
     $('#quizScore').textContent = quizScore.correct + ' / ' + quizScore.total;
 
     logAnswer(correct);
@@ -1168,7 +1170,11 @@
     if (data.ok && data.pending) {
       line = '📌 똑패스 점수 반영 중…' + (ns !== '' ? ' (현재 ' + ns + '점)' : '');
     } else if (data.ok) {
-      line = '📌 앱 점수 ' + (pts > 0 ? '+' + pts + '점' : '반영') + (ns !== '' ? ' (누적 ' + ns + '점)' : '');
+      if (pts > 0) {
+        line = '📌 정답 +5점 반영!' + (ns !== '' ? ' (누적 ' + ns + '점)' : '');
+      } else {
+        line = '📌 감점 없음 · 응원해요!' + (ns !== '' ? ' (누적 ' + ns + '점)' : '');
+      }
     } else {
       line = '⚠ 앱 점수 반영 실패' + (data.msg ? ': ' + data.msg : '');
     }
