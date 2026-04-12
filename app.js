@@ -74,6 +74,29 @@
   const $ = (sel, el = document) => el.querySelector(sel);
   const $$ = (sel, el = document) => el.querySelectorAll(sel);
 
+  /** index.html 감시문구가 "로딩 중"일 때만 오탐 → 앱 실행 즉시 다른 문구로 (fetch 대기는 정상) */
+  try {
+    var _bootInit = document.getElementById('initStatus');
+    if (_bootInit) _bootInit.textContent = '불러오는 중…';
+  } catch (e) {}
+
+  function fetchWithTimeout(url, opt, timeoutMs) {
+    opt = opt || {};
+    timeoutMs = timeoutMs != null ? timeoutMs : 55000;
+    if (typeof AbortController !== 'undefined') {
+      var ctrl = new AbortController();
+      var tid = setTimeout(function () { try { ctrl.abort(); } catch (err) {} }, timeoutMs);
+      var merged = Object.assign({}, opt, { signal: ctrl.signal });
+      return fetch(url, merged).finally(function () { clearTimeout(tid); });
+    }
+    return Promise.race([
+      fetch(url, opt),
+      new Promise(function (_, rej) {
+        setTimeout(function () { rej(new Error('요청 시간 초과')); }, timeoutMs);
+      })
+    ]);
+  }
+
   /** 단어(keyword) 영어 발음 — Android WebView는 speechSynthesis 무음이 잦아 Audio(Google TTS URL) 우선, 폴백은 Web Speech(vocab-app tts.ts와 동일 패턴). */
   var _speakTimer = null;
   var _lastGoogleAudio = null;
@@ -407,7 +430,7 @@
         // 2) 캐시 없으면 정적 JSON (연결사·인칭대명사 첫 방문에도 바로 표시)
         if (!instantData && (dbId === CONNECTOR_DB_ID || isConnectorPage)) {
           try {
-            var connRes = await fetch('data/connector-words.json?t=' + Date.now(), { cache: 'no-store' });
+            var connRes = await fetchWithTimeout('data/connector-words.json?t=' + Date.now(), { cache: 'no-store' }, 45000);
             if (connRes.ok) {
               var localData = await connRes.json();
               if (localData.words && localData.words.length > 0) {
@@ -418,7 +441,7 @@
         }
         if (!instantData && dbId === PRONOUN_DB_ID) {
           try {
-            var pronRes = await fetch('data/pronoun-words.json?t=' + Date.now(), { cache: 'no-store' });
+            var pronRes = await fetchWithTimeout('data/pronoun-words.json?t=' + Date.now(), { cache: 'no-store' }, 45000);
             if (pronRes.ok) {
               var pronData = await pronRes.json();
               if (pronData.words && pronData.words.length > 0) {
@@ -443,10 +466,10 @@
             var basePath = pathParts.length > 1 ? '/' + pathParts.slice(0, -1).join('/') : '';
             var apiUrl = (origin || '') + basePath + '/api/notion-words?database_id=' + encodeURIComponent(id) +
               (params.get('set_title') ? '&set_title=' + encodeURIComponent(params.get('set_title')) : '') + '&t=' + Date.now();
-            fetch(apiUrl, { cache: 'no-store', method: 'GET' }).then(function (res) {
+            fetchWithTimeout(apiUrl, { cache: 'no-store', method: 'GET' }, 55000).then(function (res) {
               if (!res.ok && basePath && res.status === 404) {
-                return fetch((origin || '') + '/api/notion-words?database_id=' + encodeURIComponent(id) +
-                  (params.get('set_title') ? '&set_title=' + encodeURIComponent(params.get('set_title')) : '') + '&t=' + Date.now(), { cache: 'no-store', method: 'GET' });
+                return fetchWithTimeout((origin || '') + '/api/notion-words?database_id=' + encodeURIComponent(id) +
+                  (params.get('set_title') ? '&set_title=' + encodeURIComponent(params.get('set_title')) : '') + '&t=' + Date.now(), { cache: 'no-store', method: 'GET' }, 55000);
               }
               return res;
             }).then(function (res) { return res.ok ? res.json() : null; }).then(function (apiData) {
@@ -477,10 +500,10 @@
           var basePath = pathParts.length > 1 ? '/' + pathParts.slice(0, -1).join('/') : '';
           var apiUrl = (origin || '') + basePath + '/api/notion-words?database_id=' + encodeURIComponent(dbId) +
             (params.get('set_title') ? '&set_title=' + encodeURIComponent(params.get('set_title')) : '') + '&t=' + Date.now();
-          var res = await fetch(apiUrl, { cache: 'no-store', method: 'GET' });
+          var res = await fetchWithTimeout(apiUrl, { cache: 'no-store', method: 'GET' }, 55000);
           if (!res.ok && basePath && res.status === 404) {
-            res = await fetch((origin || '') + '/api/notion-words?database_id=' + encodeURIComponent(dbId) +
-              (params.get('set_title') ? '&set_title=' + encodeURIComponent(params.get('set_title')) : '') + '&t=' + Date.now(), { cache: 'no-store', method: 'GET' });
+            res = await fetchWithTimeout((origin || '') + '/api/notion-words?database_id=' + encodeURIComponent(dbId) +
+              (params.get('set_title') ? '&set_title=' + encodeURIComponent(params.get('set_title')) : '') + '&t=' + Date.now(), { cache: 'no-store', method: 'GET' }, 55000);
           }
           if (!res.ok) {
             var err = await res.json().catch(function () { return {}; });
@@ -497,7 +520,7 @@
         }
       } else {
         // 없으면 기존 words.json
-        const res = await fetch('data/words.json?t=' + Date.now(), { cache: 'no-store' });
+        const res = await fetchWithTimeout('data/words.json?t=' + Date.now(), { cache: 'no-store' }, 45000);
         data = await res.json();
       }
 
