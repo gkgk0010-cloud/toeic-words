@@ -55,27 +55,193 @@
   const $ = (sel, el = document) => el.querySelector(sel);
   const $$ = (sel, el = document) => el.querySelectorAll(sel);
 
-  /** Web Speech API — 단어(keyword) 영어 발음 (수동 버튼 + 카드·퀴즈 등장 시 자동) */
+  /** 단어(keyword) 영어 발음 — Android WebView는 speechSynthesis 무음이 잦아 Audio(Google TTS URL) 우선, 폴백은 Web Speech(vocab-app tts.ts와 동일 패턴). */
   var _speakTimer = null;
-  function speakKeyword(text) {
-    if (!text || typeof window.speechSynthesis === 'undefined') return;
+  var _lastGoogleAudio = null;
+
+  function isAndroidUA() {
+    return typeof navigator !== 'undefined' && /Android/i.test(navigator.userAgent || '');
+  }
+
+  function isLikelyInAppBrowser() {
+    var ua = navigator.userAgent || '';
+    return /KAKAOTALK|Instagram|Line\/|FBAN|FBAV|NAVER\(|Whale/i.test(ua);
+  }
+
+  function prepareSpeechSynthesis() {
     try {
-      window.speechSynthesis.cancel();
-      var clean = String(text).trim();
-      if (!clean || clean === '—') return;
-      var u = new SpeechSynthesisUtterance(clean);
+      var s = window.speechSynthesis;
+      if (!s) return;
+      if (s.paused) s.resume();
+      s.getVoices();
+    } catch (e) {}
+  }
+
+  function primeSpeechFromUserTap() {
+    try {
+      prepareSpeechSynthesis();
+      if (typeof window.speechSynthesis === 'undefined' || !window.speechSynthesis) return;
+      var u = new SpeechSynthesisUtterance('.');
       u.lang = 'en-US';
-      u.rate = 0.92;
-      var voices = window.speechSynthesis.getVoices();
-      if (voices && voices.length) {
-        var us = voices.filter(function (v) { return v.lang === 'en-US'; });
-        var en = voices.filter(function (v) { return v.lang && /^en/i.test(v.lang); });
-        if (us.length) u.voice = us[0];
-        else if (en.length) u.voice = en[0];
-      }
+      u.volume = 0.01;
+      u.rate = 10;
+      window.speechSynthesis.cancel();
       window.speechSynthesis.speak(u);
     } catch (e) {}
   }
+
+  function unlockSpeechOnFirstInteraction() {
+    if (typeof document === 'undefined') return;
+    function unlock() {
+      prepareSpeechSynthesis();
+      try {
+        if (window.speechSynthesis) window.speechSynthesis.getVoices();
+      } catch (e) {}
+      if (isLikelyInAppBrowser()) primeSpeechFromUserTap();
+      document.removeEventListener('touchstart', unlock);
+      document.removeEventListener('click', unlock);
+    }
+    document.addEventListener('touchstart', unlock, { passive: true });
+    document.addEventListener('click', unlock);
+  }
+  unlockSpeechOnFirstInteraction();
+
+  function speakViaGoogleAudio(text) {
+    return new Promise(function (resolve) {
+      try {
+        var t = String(text).trim().slice(0, 180);
+        if (!t) {
+          resolve(false);
+          return;
+        }
+        var q = encodeURIComponent(t);
+        var urls = [
+          'https://translate.google.com/translate_tts?ie=UTF-8&tl=en&client=tw-ob&q=' + q,
+          'https://translate.google.com/translate_tts?ie=UTF-8&tl=en&client=gtx&q=' + q
+        ];
+        var i = 0;
+        function tryNext() {
+          if (i >= urls.length) {
+            resolve(false);
+            return;
+          }
+          var audio = new Audio(urls[i++]);
+          audio.volume = 1;
+          audio.play()
+            .then(function () {
+              _lastGoogleAudio = audio;
+              resolve(true);
+            })
+            .catch(function () {
+              tryNext();
+            });
+        }
+        tryNext();
+      } catch (e) {
+        resolve(false);
+      }
+    });
+  }
+
+  function buildUtterance(raw, withVoice) {
+    var utterance = new SpeechSynthesisUtterance(raw);
+    utterance.lang = 'en-US';
+    utterance.volume = 1;
+    utterance.pitch = 1;
+    utterance.rate = 0.9;
+    if (withVoice && window.speechSynthesis) {
+      var voices = window.speechSynthesis.getVoices();
+      var chosen = null;
+      var j;
+      for (j = 0; j < voices.length; j++) {
+        if (voices[j].lang && voices[j].lang.toLowerCase().indexOf('en') === 0) {
+          chosen = voices[j];
+          break;
+        }
+      }
+      if (!chosen && voices.length) chosen = voices[0];
+      if (chosen) utterance.voice = chosen;
+    }
+    return utterance;
+  }
+
+  function speakKeywordWeb(raw) {
+    try {
+      if (typeof window === 'undefined' || typeof window.speechSynthesis === 'undefined') return;
+
+      prepareSpeechSynthesis();
+
+      function runSpeak(useVoice) {
+        try {
+          window.speechSynthesis.cancel();
+          var utterance = buildUtterance(raw, useVoice);
+          var retried = false;
+          utterance.onerror = function () {
+            if (retried) return;
+            retried = true;
+            window.setTimeout(function () {
+              try {
+                var u2 = buildUtterance(raw, false);
+                window.speechSynthesis.speak(u2);
+              } catch (e) {}
+            }, isAndroidUA() ? 200 : 150);
+          };
+          window.speechSynthesis.speak(utterance);
+        } catch (e) {}
+      }
+
+      var delay = isAndroidUA() ? 120 : isLikelyInAppBrowser() ? 80 : 40;
+      function schedule(useVoice) {
+        window.setTimeout(function () { runSpeak(useVoice); }, delay);
+      }
+
+      var voices = window.speechSynthesis.getVoices();
+      if (voices.length > 0) {
+        schedule(true);
+        return;
+      }
+
+      function onVoices() {
+        window.speechSynthesis.removeEventListener('voiceschanged', onVoices);
+        schedule(true);
+      }
+      window.speechSynthesis.addEventListener('voiceschanged', onVoices);
+      window.setTimeout(function () {
+        if (window.speechSynthesis.getVoices().length > 0) {
+          window.speechSynthesis.removeEventListener('voiceschanged', onVoices);
+          schedule(true);
+        } else {
+          window.speechSynthesis.removeEventListener('voiceschanged', onVoices);
+          schedule(false);
+        }
+      }, isAndroidUA() ? 500 : isLikelyInAppBrowser() ? 600 : 400);
+    } catch (e) {}
+  }
+
+  function speakKeyword(text) {
+    if (text == null || text === '') return;
+    var clean = String(text).trim();
+    if (!clean || clean === '—') return;
+    try {
+      if (window.speechSynthesis) window.speechSynthesis.cancel();
+    } catch (e) {}
+    try {
+      if (_lastGoogleAudio) {
+        _lastGoogleAudio.pause();
+        _lastGoogleAudio = null;
+      }
+    } catch (e) {}
+    prepareSpeechSynthesis();
+
+    if (isAndroidUA()) {
+      void speakViaGoogleAudio(clean).then(function (ok) {
+        if (!ok) speakKeywordWeb(clean);
+      });
+      return;
+    }
+    speakKeywordWeb(clean);
+  }
+
   function scheduleSpeakKeyword(text) {
     if (_speakTimer) clearTimeout(_speakTimer);
     _speakTimer = setTimeout(function () {
@@ -83,6 +249,7 @@
       speakKeyword(text);
     }, 400);
   }
+
   if (typeof window !== 'undefined' && window.speechSynthesis) {
     try {
       window.speechSynthesis.getVoices();
@@ -397,10 +564,12 @@
   $('#card')?.addEventListener('click', cardFlip);
   $('#btnCardSpeak')?.addEventListener('click', function (e) {
     e.stopPropagation();
+    primeSpeechFromUserTap();
     var kw = $('#cardKeyword');
     if (kw && kw.textContent) speakKeyword(kw.textContent.trim());
   });
   $('#btnQuizSpeak')?.addEventListener('click', function () {
+    primeSpeechFromUserTap();
     if (currentQuizWord && currentQuizWord.keyword) speakKeyword(currentQuizWord.keyword);
   });
 
