@@ -13,6 +13,23 @@
     _dbIdFromUrl = (_params && (_params.get('db') || _params.get('database_id'))) ? String(_params.get('db') || _params.get('database_id')).trim().replace(/-/g, '') : '';
   }
 
+  /** 똑패스 앱 iframe으로 열릴 때만 — 부모 WebView에서 네이티브 TTS(postMessage) 사용 */
+  var _tokpassNativeTts = false;
+  try {
+    var _hrefTts = typeof window !== 'undefined' && window.location && window.location.href ? window.location.href : '';
+    var _searchTts = (typeof window !== 'undefined' && window.location && window.location.search) ? window.location.search : '';
+    if (!_searchTts && _hrefTts.indexOf('?') >= 0) { _searchTts = '?' + _hrefTts.split('?').slice(1).join('?'); }
+    var _pTts = _searchTts ? new URLSearchParams(_searchTts) : null;
+    var _rawTts = _pTts && _pTts.get('tokpass_native_tts');
+    _tokpassNativeTts = _rawTts === '1' || (_rawTts && String(_rawTts).toLowerCase() === 'true');
+    if (!_tokpassNativeTts && _hrefTts && /[?&#]tokpass_native_tts=(?:1|true)\b/i.test(_hrefTts)) {
+      _tokpassNativeTts = true;
+    }
+  } catch (e) {}
+  try {
+    window._tokpassNativeTts = _tokpassNativeTts;
+  } catch (e) {}
+
   const THEMES = ['현재', '과거', '미래', '현재완료'];
   /** 퀴즈 선택지: 격 퀴즈일 때 항상 이 목록에서 4개 고르기 (소유격만 네 개 나오는 것 방지) */
   const CASE_TYPES = ['주격', '목적격', '소유격', '소유대명사', '재귀대명사'];
@@ -222,6 +239,15 @@
     if (text == null || text === '') return;
     var clean = String(text).trim();
     if (!clean || clean === '—') return;
+    /** 똑패스 iframe(tokpass_native_tts=1): 부모 네이티브 TTS만 사용. Google TTS / Web Speech 경로로 내려가지 않음. */
+    if (_tokpassNativeTts) {
+      try {
+        if (typeof window !== 'undefined' && window.parent && window.parent !== window) {
+          window.parent.postMessage({ type: 'tokpass-speak-en', text: clean }, '*');
+        }
+      } catch (e) {}
+      return;
+    }
     try {
       if (window.speechSynthesis) window.speechSynthesis.cancel();
     } catch (e) {}
