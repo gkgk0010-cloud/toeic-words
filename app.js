@@ -527,7 +527,8 @@
 
   function applyFilter(resetCardIndex) {
     const val = ($('#themeFilter') || {}).value || '';
-    const useCategoryForFilter = categoryLabel && allWords.some(function (w) { return w.category; });
+    const useCategoryForFilter = (categoryLabel || categoryColumnLooksLikePartOfSpeech()) &&
+      allWords.some(function (w) { return w.category; });
     if (!val) {
       filteredWords = [...allWords];
     } else if (themeLabel === '격' && useCategoryForFilter) {
@@ -656,19 +657,44 @@
     return shuffle(choices);
   }
 
-  /** 단어당 정답 시제. theme 하나 또는 themes 배열(중복 정답). 품사·구 DB에서 theme 미입력이면 '현재'로 채우지 않음(퀴즈 오염 방지). */
-  function getCorrectThemes(word) {
-    if (word.themes && Array.isArray(word.themes) && word.themes.length) return word.themes.map(String);
-    if (word.theme != null && String(word.theme).trim() !== '') return [String(word.theme).trim()];
-    if (categoryLabel && themeLabel !== '시제' && themeLabel !== '격') return [];
-    return ['현재'];
-  }
-
-  /** 필터된 단어 기준 고유 품사·구(category) 목록 */
+  /** 단어당 정답 시제. 품사·구 DB(고유 category 2개 이상)는 시제 미입력 시 '현재'로 채우지 않음 — API에 categoryLabel 없어도 동일 적용 */
   function getUniqueCategoryValues() {
     return [...new Set(filteredWords.map(function (w) {
       return w.category && String(w.category).trim();
     }).filter(Boolean))].sort();
+  }
+
+  /**
+   * 품사·구 퀴즈 모드. 노션이 category에 시제를 복사해 두는 경우가 있어,
+   * 고유 category가 전부 THEMES(현재·과거·미래·현재완료) 안에만 있으면 시제 덱으로 본다.
+   */
+  function isCategoryDrivenDeck() {
+    if (themeLabel === '격') return false;
+    var uc = getUniqueCategoryValues();
+    if (uc.length < 2) return false;
+    var onlyTenseLabels = uc.every(function (c) {
+      return THEMES.indexOf(c) >= 0;
+    });
+    if (onlyTenseLabels) return false;
+    return true;
+  }
+
+  /** 필터/applyFilter용: API에 categoryLabel 없어도 품사 컬럼만 시제 네 종류가 아니면 분류 필터 사용 */
+  function categoryColumnLooksLikePartOfSpeech() {
+    var catVals = [...new Set(allWords.map(function (w) {
+      return w.category && String(w.category).trim();
+    }).filter(Boolean))];
+    if (catVals.length < 2) return false;
+    return !catVals.every(function (c) { return THEMES.indexOf(c) >= 0; });
+  }
+
+  /** 단어당 정답 시제. theme 하나 또는 themes 배열(중복 정답). */
+  function getCorrectThemes(word) {
+    if (word.themes && Array.isArray(word.themes) && word.themes.length) return word.themes.map(String);
+    if (word.theme != null && String(word.theme).trim() !== '') return [String(word.theme).trim()];
+    if (isCategoryDrivenDeck()) return [];
+    if (categoryLabel && themeLabel !== '시제' && themeLabel !== '격') return [];
+    return ['현재'];
   }
 
   function pickThemeChoices(primaryTheme, count) {
@@ -695,13 +721,10 @@
   function startQuiz() {
     applyFilter(true);
     var list = filteredWords.slice();
-    /** 품사·구별 퀴즈: category 없는 행은 제외(정답 불가) */
-    if (categoryLabel && themeLabel !== '격') {
-      var uc = getUniqueCategoryValues();
-      if (uc.length >= 2) {
-        var withCat = list.filter(function (w) { return w.category && String(w.category).trim(); });
-        if (withCat.length >= 1) list = withCat;
-      }
+    /** 품사·구별 덱: category 없는 행은 퀴즈에서 제외(API에 categoryLabel 없어도 동일) */
+    if (themeLabel !== '격' && isCategoryDrivenDeck()) {
+      var withCat = list.filter(function (w) { return w.category && String(w.category).trim(); });
+      if (withCat.length >= 1) list = withCat;
     }
     quizWordOrder = shuffle(list);
     quizIndex = 0;
@@ -720,8 +743,8 @@
       $('#quizScore').textContent = '0 / 0';
       return;
     }
+    /** 인덱스가 범위 밖이면(끝난 직후 등) 재시작하지 않고 대기 — 문항 수 꼬임 방지 */
     if (quizIndex >= quizWordOrder.length) {
-      startQuiz();
       return;
     }
     if (progressEl) progressEl.textContent = (quizIndex + 1) + ' / ' + quizWordOrder.length + ' 문제';
@@ -734,7 +757,7 @@
     let questionText;
     const allCats = getUniqueCategories();
     const uniqueCats = getUniqueCategoryValues();
-    const useCategoryQuiz = !!(categoryLabel && themeLabel !== '격' && uniqueCats.length >= 2 &&
+    const useCategoryQuiz = !!(themeLabel !== '격' && isCategoryDrivenDeck() &&
       currentQuizWord.category && String(currentQuizWord.category).trim());
 
     if (themeLabel === '격') {
@@ -744,20 +767,24 @@
       choices = pickCategoryChoices(primaryTheme, caseChoices, 4);
       questionText = '이 단어는 무슨 격에 쓰이나요?';
     } else if (useCategoryQuiz) {
-      // 기본어휘 품사·구별 등: 노션 category 기준 (theme 미입력 시 전부 '현재'로 오인되던 문제 수정)
+      // 기본어휘 품사·구별 등: 노션 category 기준
       quizGradeByCategory = true;
       var primaryCat = String(currentQuizWord.category).trim();
       choices = pickCategoryChoices(primaryCat, uniqueCats, 4);
-      questionText = '이 단어의 ' + (categoryLabel || '분류') + '은(는) 무엇인가요?';
-    } else if (themeLabel === '시제' && allCats.length < 2) {
+      var catQ = categoryLabel && String(categoryLabel).trim();
+      questionText = '이 단어의 ' + (catQ || '품사·구') + '은(는) 무엇인가요?';
+    } else if (themeLabel === '시제' && allCats.length < 2 && !isCategoryDrivenDeck()) {
       choices = pickThemeChoices(primaryTheme, 4);
       questionText = '이 단어는 어느 ' + themeLabel + '에 쓰이나요?';
     } else if (allCats.length >= 2) {
       // 연결사·다중 시제 등: theme 값들로 선택지
       choices = pickCategoryChoices(primaryTheme, allCats, 4);
       questionText = isConnectorPage ? '이 연결사는 어떤 카테고리에 쓰이나요?' : ('이 단어는 어느 ' + themeLabel + '에 쓰이나요?');
-    } else if (allCats.length === 1) {
+    } else if (allCats.length === 1 && !isCategoryDrivenDeck()) {
       // theme 종류가 하나뿐이면 같은 값만 반복되는 것 방지 → 시제 네 가지(현재·과거·미래·현재완료)로 출제
+      choices = pickThemeChoices(primaryTheme, 4);
+      questionText = '이 단어는 어느 ' + themeLabel + '에 쓰이나요?';
+    } else if (isCategoryDrivenDeck() && uniqueCats.length < 2) {
       choices = pickThemeChoices(primaryTheme, 4);
       questionText = '이 단어는 어느 ' + themeLabel + '에 쓰이나요?';
     } else {
@@ -862,8 +889,6 @@
       fb.textContent = '퀴즈 끝! ' + quizScore.correct + ' / ' + quizScore.total + ' 맞음';
       $('#quizChoices').innerHTML = '';
       quizIndex++;
-    } else if (quizIndex >= quizWordOrder.length) {
-      startQuiz();
     }
   });
 
@@ -871,16 +896,17 @@
   function applyFilterUI() {
     if (!allWords.length) return;
     const labelEl = document.querySelector('.filter label');
-    const useCategory = categoryLabel && allWords.some(function (w) { return w.category; });
+    const useCategory = (categoryLabel || categoryColumnLooksLikePartOfSpeech()) &&
+      allWords.some(function (w) { return w.category; });
     var opts;
     if (themeLabel === '격' && useCategory) {
-      if (labelEl) labelEl.textContent = categoryLabel; // '구분'
+      if (labelEl) labelEl.textContent = categoryLabel || '구분';
       opts = [...new Set(allWords.map(function (w) { return w.category; }).filter(Boolean))].sort();
     } else if (themeLabel === '격') {
       if (labelEl) labelEl.textContent = themeLabel;
       opts = CASE_TYPES.slice();
     } else {
-      if (labelEl) labelEl.textContent = useCategory ? categoryLabel : themeLabel;
+      if (labelEl) labelEl.textContent = useCategory ? (categoryLabel || '분류') : themeLabel;
       if (useCategory) {
         opts = [...new Set(allWords.map(function (w) { return w.category; }).filter(Boolean))].sort();
       } else {
