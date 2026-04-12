@@ -658,8 +658,9 @@
   }
 
   /** 단어당 정답 시제. 품사·구 DB(고유 category 2개 이상)는 시제 미입력 시 '현재'로 채우지 않음 — API에 categoryLabel 없어도 동일 적용 */
+  /** 전체 DB 기준(카드 필터와 무관) — 퀴즈 선택지·품사 모드 판별에 사용 */
   function getUniqueCategoryValues() {
-    return [...new Set(filteredWords.map(function (w) {
+    return [...new Set(allWords.map(function (w) {
       return w.category && String(w.category).trim();
     }).filter(Boolean))].sort();
   }
@@ -704,9 +705,9 @@
     return shuffle(choices);
   }
 
-  /** 연결사: 데이터에서 나온 카테고리 목록 (중복 제거) */
+  /** 연결사·시제: 전체 DB 기준 고유 theme 값 (퀴즈는 카드 필터 무시) */
   function getUniqueCategories() {
-    return [...new Set(filteredWords.flatMap(function (w) { return getCorrectThemes(w); }))].filter(Boolean).sort();
+    return [...new Set(allWords.flatMap(function (w) { return getCorrectThemes(w); }))].filter(Boolean).sort();
   }
 
   function pickCategoryChoices(primary, allCats, count) {
@@ -719,9 +720,9 @@
   }
 
   function startQuiz() {
-    applyFilter(true);
-    var list = filteredWords.slice();
-    /** 품사·구별 덱: category 없는 행은 퀴즈에서 제외(API에 categoryLabel 없어도 동일) */
+    /** 퀴즈는 항상 전체 단어 기준(카드에서 품사 필터를 걸어도 동일 문항·동일 선택지 풀) */
+    var list = allWords.slice();
+    /** 품사·구별 덱: category 없는 행은 퀴즈에서 제외 */
     if (themeLabel !== '격' && isCategoryDrivenDeck()) {
       var withCat = list.filter(function (w) { return w.category && String(w.category).trim(); });
       if (withCat.length >= 1) list = withCat;
@@ -739,6 +740,8 @@
       $('#quizWord').textContent = isConnectorPage
         ? '연결사 단어가 없습니다. 카드 탭에서 데이터가 로드됐는지 확인하거나, 노션 DB(연결사)를 확인해 주세요.'
         : '단어가 필요합니다.';
+      var qm0 = $('#quizMeaning');
+      if (qm0) qm0.textContent = '';
       $('#quizChoices').innerHTML = '';
       $('#quizScore').textContent = '0 / 0';
       return;
@@ -792,6 +795,11 @@
       questionText = '이 단어는 어느 ' + themeLabel + '에 쓰이나요?';
     }
     $('#quizWord').textContent = currentQuizWord.keyword;
+    var qm = $('#quizMeaning');
+    if (qm) {
+      var mean = currentQuizWord.meaning && String(currentQuizWord.meaning).trim();
+      qm.textContent = mean || '—';
+    }
     $('#quizQuestion').textContent = questionText;
     $('#quizChoices').innerHTML = choices.map((t) =>
       '<li data-theme="' + (t || '').replace(/"/g, '&quot;') + '">' + (t || '') + '</li>'
@@ -815,6 +823,26 @@
   }
 
   async function logAnswer(correct) {
+    /** 토큰패스 WebView 전체화면 iframe: 점수·로그는 부모(메인 앱)에서 saveResult·pushAnswerLog 처리 */
+    try {
+      if (window.parent && window.parent !== window) {
+        var kw = '';
+        var meaning = '';
+        if (currentQuizWord) {
+          if (currentQuizWord.keyword != null) kw = String(currentQuizWord.keyword);
+          if (currentQuizWord.meaning != null) meaning = String(currentQuizWord.meaning);
+        }
+        window.parent.postMessage({
+          type: 'tokpass-jogbo-answer',
+          correct: !!correct,
+          tag: getTag(),
+          keyword: kw,
+          meaning: meaning
+        }, '*');
+        return;
+      }
+    } catch (_pm) {}
+
     const cfg = window.APP_CONFIG;
     if (!cfg || !cfg.SUPABASE_URL || !cfg.SUPABASE_ANON_KEY) return;
     const tag = getTag();
