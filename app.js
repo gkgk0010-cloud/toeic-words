@@ -290,7 +290,12 @@
         } catch (e) {}
       }
       try {
-        if (isAndroidUA()) {
+        /** 부모(똑패스)가 translate.google.com 이 막힌 환경용 — Google 요청 없이 Web Speech만 */
+        var skipGoogle = !!(p.skipGoogle || p.tokpassSkipGoogle);
+        if (isAndroidUA() && skipGoogle) {
+          speakKeywordWeb(t);
+          ack(true);
+        } else if (isAndroidUA()) {
           void speakViaGoogleAudio(t).then(function (ok) {
             if (!ok) speakKeywordWeb(t);
             ack(true);
