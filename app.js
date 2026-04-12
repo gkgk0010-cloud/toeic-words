@@ -1,26 +1,49 @@
 (function () {
   'use strict';
 
+  /** URLSearchParams 없는 구형 WebView 대비 — 예외 없이 쿼리만 파싱 */
+  function parseQueryKey(href, key) {
+    try {
+      var h = String(href || (typeof window !== 'undefined' && window.location && window.location.href) || '');
+      var qi = h.indexOf('?');
+      if (qi < 0) return '';
+      var query = h.slice(qi + 1);
+      var segments = query.split('&');
+      var pref = key + '=';
+      for (var i = 0; i < segments.length; i++) {
+        var seg = segments[i];
+        if (seg.indexOf(pref) === 0) {
+          return decodeURIComponent(seg.slice(pref.length).replace(/\+/g, ' ').split('#')[0]).trim();
+        }
+      }
+    } catch (e) {}
+    return '';
+  }
+
+  try {
+    var _bootInit0 = document.getElementById('initStatus');
+    if (_bootInit0) _bootInit0.textContent = '불러오는 중…';
+  } catch (e) {}
+
   // 연결사 전용 페이지(connector.html)면 FORCE_DB_ID 사용, 아니면 URL에서 db 추출
   var _dbIdFromUrl = '';
   if (typeof window !== 'undefined' && window.FORCE_DB_ID) {
     _dbIdFromUrl = String(window.FORCE_DB_ID).trim().replace(/-/g, '');
   } else {
-    var _href = typeof window !== 'undefined' && window.location && window.location.href ? window.location.href : '';
-    var _search = (typeof window !== 'undefined' && window.location && window.location.search) ? window.location.search : '';
-    if (!_search && _href.indexOf('?') >= 0) { _search = '?' + _href.split('?').slice(1).join('?'); }
-    var _params = _search ? new URLSearchParams(_search) : null;
-    _dbIdFromUrl = (_params && (_params.get('db') || _params.get('database_id'))) ? String(_params.get('db') || _params.get('database_id')).trim().replace(/-/g, '') : '';
+    try {
+      var _href = typeof window !== 'undefined' && window.location && window.location.href ? window.location.href : '';
+      var _dbRaw = parseQueryKey(_href, 'db') || parseQueryKey(_href, 'database_id');
+      _dbIdFromUrl = _dbRaw ? String(_dbRaw).trim().replace(/-/g, '') : '';
+    } catch (e) {
+      _dbIdFromUrl = '';
+    }
   }
 
   /** 똑패스 앱 iframe으로 열릴 때만 — 부모 WebView에서 네이티브 TTS(postMessage) 사용 */
   var _tokpassNativeTts = false;
   try {
     var _hrefTts = typeof window !== 'undefined' && window.location && window.location.href ? window.location.href : '';
-    var _searchTts = (typeof window !== 'undefined' && window.location && window.location.search) ? window.location.search : '';
-    if (!_searchTts && _hrefTts.indexOf('?') >= 0) { _searchTts = '?' + _hrefTts.split('?').slice(1).join('?'); }
-    var _pTts = _searchTts ? new URLSearchParams(_searchTts) : null;
-    var _rawTts = _pTts && _pTts.get('tokpass_native_tts');
+    var _rawTts = parseQueryKey(_hrefTts, 'tokpass_native_tts');
     _tokpassNativeTts = _rawTts === '1' || (_rawTts && String(_rawTts).toLowerCase() === 'true');
     if (!_tokpassNativeTts && _hrefTts && /[?&#]tokpass_native_tts=(?:1|true)\b/i.test(_hrefTts)) {
       _tokpassNativeTts = true;
@@ -86,12 +109,6 @@
     }
     return out;
   }
-
-  /** index.html 감시문구가 "로딩 중"일 때만 오탐 → 앱 실행 즉시 다른 문구로 (fetch 대기는 정상) */
-  try {
-    var _bootInit = document.getElementById('initStatus');
-    if (_bootInit) _bootInit.textContent = '불러오는 중…';
-  } catch (e) {}
 
   function fetchWithTimeout(url, opt, timeoutMs) {
     opt = opt || {};
@@ -402,12 +419,9 @@
 
   async function loadData() {
     try {
-      var search = window.location.search;
-      if (!search && window.location.href.indexOf('?') >= 0) {
-        search = '?' + window.location.href.split('?').slice(1).join('?');
-      }
-      var params = new URLSearchParams(search);
-      var dbId = _dbIdFromUrl || (params.get('db') || params.get('database_id') || '').trim().replace(/-/g, '');
+      var _hrefLoad = window.location && window.location.href ? window.location.href : '';
+      var setTitleQ = parseQueryKey(_hrefLoad, 'set_title');
+      var dbId = _dbIdFromUrl || (parseQueryKey(_hrefLoad, 'db') || parseQueryKey(_hrefLoad, 'database_id') || '').trim().replace(/-/g, '');
       let data;
 
       if (window.location.href.indexOf('db=') >= 0 && !dbId) {
@@ -478,11 +492,11 @@
             var pathParts = pathname.split('/').filter(Boolean);
             var basePath = pathParts.length > 1 ? '/' + pathParts.slice(0, -1).join('/') : '';
             var apiUrl = (origin || '') + basePath + '/api/notion-words?database_id=' + encodeURIComponent(id) +
-              (params.get('set_title') ? '&set_title=' + encodeURIComponent(params.get('set_title')) : '') + '&t=' + Date.now();
+              (setTitleQ ? '&set_title=' + encodeURIComponent(setTitleQ) : '') + '&t=' + Date.now();
             fetchWithTimeout(apiUrl, { cache: 'no-store', method: 'GET' }, 55000).then(function (res) {
               if (!res.ok && basePath && res.status === 404) {
                 return fetchWithTimeout((origin || '') + '/api/notion-words?database_id=' + encodeURIComponent(id) +
-                  (params.get('set_title') ? '&set_title=' + encodeURIComponent(params.get('set_title')) : '') + '&t=' + Date.now(), { cache: 'no-store', method: 'GET' }, 55000);
+                  (setTitleQ ? '&set_title=' + encodeURIComponent(setTitleQ) : '') + '&t=' + Date.now(), { cache: 'no-store', method: 'GET' }, 55000);
               }
               return res;
             }).then(function (res) { return res.ok ? res.json() : null; }).then(function (apiData) {
@@ -512,11 +526,11 @@
           var pathParts = pathname.split('/').filter(Boolean);
           var basePath = pathParts.length > 1 ? '/' + pathParts.slice(0, -1).join('/') : '';
           var apiUrl = (origin || '') + basePath + '/api/notion-words?database_id=' + encodeURIComponent(dbId) +
-            (params.get('set_title') ? '&set_title=' + encodeURIComponent(params.get('set_title')) : '') + '&t=' + Date.now();
+            (setTitleQ ? '&set_title=' + encodeURIComponent(setTitleQ) : '') + '&t=' + Date.now();
           var res = await fetchWithTimeout(apiUrl, { cache: 'no-store', method: 'GET' }, 55000);
           if (!res.ok && basePath && res.status === 404) {
             res = await fetchWithTimeout((origin || '') + '/api/notion-words?database_id=' + encodeURIComponent(dbId) +
-              (params.get('set_title') ? '&set_title=' + encodeURIComponent(params.get('set_title')) : '') + '&t=' + Date.now(), { cache: 'no-store', method: 'GET' }, 55000);
+              (setTitleQ ? '&set_title=' + encodeURIComponent(setTitleQ) : '') + '&t=' + Date.now(), { cache: 'no-store', method: 'GET' }, 55000);
           }
           if (!res.ok) {
             var err = await res.json().catch(function () { return {}; });
@@ -894,13 +908,9 @@
       if (currentQuizWord.keyword != null) kw = String(currentQuizWord.keyword);
       if (currentQuizWord.meaning != null) meaning = String(currentQuizWord.meaning);
     }
-    var search = window.location.search || '';
-    if (!search && window.location.href.indexOf('?') >= 0) {
-      search = '?' + window.location.href.split('?').slice(1).join('?');
-    }
-    var params = new URLSearchParams(search);
-    var studentId = (params.get('student_id') || params.get('user') || '').trim();
-    var jogboSig = (params.get('jogbo_sig') || '').trim();
+    var _hrefLog = window.location && window.location.href ? window.location.href : '';
+    var studentId = (parseQueryKey(_hrefLog, 'student_id') || parseQueryKey(_hrefLog, 'user') || '').trim();
+    var jogboSig = (parseQueryKey(_hrefLog, 'jogbo_sig') || '').trim();
 
     /** Vercel api/jogbo-score — 삼성 인터넷 등 opener 끊겨도 Supabase에 직접 +5 (메인과 동일 서명) */
     if (studentId && studentId !== 'guest' && jogboSig.length >= 16) {
@@ -965,9 +975,8 @@
     const cfg = window.APP_CONFIG;
     if (!cfg || !cfg.SUPABASE_URL || !cfg.SUPABASE_ANON_KEY) return;
     const tag = getTag();
-    const params = new URLSearchParams(window.location.search);
-    const studentId = params.get('student_id') || params.get('user') || 'guest';
-    const studentName = params.get('student_name') || params.get('name') || '';
+    var sidGuest = (studentId && String(studentId).trim()) ? String(studentId).trim() : (parseQueryKey(_hrefLog, 'student_id') || parseQueryKey(_hrefLog, 'user') || 'guest');
+    var nameGuest = parseQueryKey(_hrefLog, 'student_name') || parseQueryKey(_hrefLog, 'name') || '';
 
     try {
       const res = await fetch(cfg.SUPABASE_URL + '/rest/v1/answer_logs', {
@@ -979,8 +988,8 @@
           'Prefer': 'return=minimal'
         },
         body: JSON.stringify({
-          student_id: studentId,
-          student_name: studentName || null,
+          student_id: sidGuest,
+          student_name: nameGuest || null,
           tag: tag,
           correct: correct,
           quiz_type: 'input',
@@ -1089,12 +1098,8 @@
 
   function getCurrentDbIdFromUrl() {
     try {
-      var s = window.location.search || '';
-      if (!s && window.location.href.indexOf('?') >= 0) {
-        s = '?' + window.location.href.split('?').slice(1).join('?');
-      }
-      var p = new URLSearchParams(s);
-      return (p.get('db') || '').replace(/-/g, '');
+      var h = window.location && window.location.href ? window.location.href : '';
+      return (parseQueryKey(h, 'db') || '').replace(/-/g, '');
     } catch (e) {
       return '';
     }

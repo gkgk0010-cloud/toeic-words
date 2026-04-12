@@ -17,6 +17,15 @@
       <button type="button" id="btn-exit-quiz" class="btn-exit" style="display:none;" title="홈화면으로">나가기</button>
     </div>
     <p id="initStatus" style="margin:8px 0; color:#666; font-size:14px;">로딩 중…</p>
+    <script>
+      /* app.js(defer)보다 먼저 실행 — 구형 WebView에서 스크립트 실패해도 "로딩 중"만 뜨는 현상 완화 */
+      (function () {
+        try {
+          var el = document.getElementById('initStatus');
+          if (el) el.textContent = '불러오는 중…';
+        } catch (e) {}
+      })();
+    </script>
     <p id="loadError" style="display:none; color:#c00; font-size:14px; margin-top:8px;"></p>
     <nav class="nav">
       <a href="#cards" class="nav-link active" data-view="cards">카드</a>
@@ -86,17 +95,17 @@
   </main>
 
   <script src="config.js?v=6" defer></script>
-  <script src="app.js?v=23" defer></script>
+  <script src="app.js?v=24" defer onerror="(function(){var e=document.getElementById('loadError'),i=document.getElementById('initStatus');if(e){e.style.display='block';e.innerHTML='app.js를 불러오지 못했습니다. 비행기모드·차단 해제 후 <strong>캐시 삭제</strong>하고 새로고침하세요.';}if(i){i.style.display='none';}})()"></script>
   <script>
-    /** 정적 HTML의 "로딩 중"만 감시 — app.js가 뜨면 곧 "불러오는 중"으로 바뀌어 여기선 오탐 안 남 */
+    /** 여전히 "로딩 중"(인라인 스크립트까지 실행 안 됨)일 때만 — 대부분 HTML 캐시 꼬임 */
     setTimeout(function() {
       var s = document.getElementById('initStatus');
       if (!s || s.style.display === 'none') return;
       if (s.textContent.indexOf('로딩 중') >= 0) {
-        s.innerHTML = '스크립트(config.js / app.js)가 로드되지 않았을 수 있습니다. 네트워크 확인 후 <strong>새로고침</strong>해 주세요.';
+        s.innerHTML = '페이지가 오래된 캐시일 수 있습니다. <strong>캐시 삭제</strong> 후 다시 열어 주세요.';
         s.style.color = '#c00';
       }
-    }, 20000);
+    }, 25000);
   </script>
 </body>
 </html>
