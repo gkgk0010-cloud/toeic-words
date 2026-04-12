@@ -74,6 +74,19 @@
   const $ = (sel, el = document) => el.querySelector(sel);
   const $$ = (sel, el = document) => el.querySelectorAll(sel);
 
+  /** 구형 WebView(iOS 12 등)에 Array.prototype.flatMap 없음 */
+  function arrayFlatMap(arr, fn) {
+    if (Array.prototype.flatMap) return arr.flatMap(fn);
+    var out = [];
+    for (var i = 0; i < arr.length; i++) {
+      var part = fn(arr[i]);
+      if (Array.isArray(part)) {
+        for (var j = 0; j < part.length; j++) out.push(part[j]);
+      }
+    }
+    return out;
+  }
+
   /** index.html 감시문구가 "로딩 중"일 때만 오탐 → 앱 실행 즉시 다른 문구로 (fetch 대기는 정상) */
   try {
     var _bootInit = document.getElementById('initStatus');
@@ -664,20 +677,28 @@
     if (card && filteredWords.length) card.classList.toggle('flipped');
   }
 
-  $('#themeFilter')?.addEventListener('change', () => { applyFilter(true); renderCard(); });
-  $('#cardPrev')?.addEventListener('click', cardPrev);
-  $('#cardNext')?.addEventListener('click', cardNext);
-  $('#card')?.addEventListener('click', cardFlip);
-  $('#btnCardSpeak')?.addEventListener('click', function (e) {
-    e.stopPropagation();
-    primeSpeechFromUserTap();
-    var kw = $('#cardKeyword');
-    if (kw && kw.textContent) speakKeyword(kw.textContent.trim());
-  });
-  $('#btnQuizSpeak')?.addEventListener('click', function () {
-    primeSpeechFromUserTap();
-    if (currentQuizWord && currentQuizWord.keyword) speakKeyword(currentQuizWord.keyword);
-  });
+  (function bindCardUi() {
+    var tf = $('#themeFilter');
+    if (tf) tf.addEventListener('change', function () { applyFilter(true); renderCard(); });
+    var prev = $('#cardPrev');
+    if (prev) prev.addEventListener('click', cardPrev);
+    var next = $('#cardNext');
+    if (next) next.addEventListener('click', cardNext);
+    var cardEl = $('#card');
+    if (cardEl) cardEl.addEventListener('click', cardFlip);
+    var btnC = $('#btnCardSpeak');
+    if (btnC) btnC.addEventListener('click', function (e) {
+      e.stopPropagation();
+      primeSpeechFromUserTap();
+      var kw = $('#cardKeyword');
+      if (kw && kw.textContent) speakKeyword(kw.textContent.trim());
+    });
+    var btnQ = $('#btnQuizSpeak');
+    if (btnQ) btnQ.addEventListener('click', function () {
+      primeSpeechFromUserTap();
+      if (currentQuizWord && currentQuizWord.keyword) speakKeyword(currentQuizWord.keyword);
+    });
+  })();
 
   // ——— 퀴즈 ———
   function shuffle(arr) {
@@ -746,7 +767,7 @@
 
   /** 연결사·시제: 전체 DB 기준 고유 theme 값 (퀴즈는 카드 필터 무시) */
   function getUniqueCategories() {
-    return [...new Set(allWords.flatMap(function (w) { return getCorrectThemes(w); }))].filter(Boolean).sort();
+    return [...new Set(arrayFlatMap(allWords, function (w) { return getCorrectThemes(w); }))].filter(Boolean).sort();
   }
 
   function pickCategoryChoices(primary, allCats, count) {
@@ -1015,19 +1036,23 @@
     logAnswer(correct);
   }
 
-    $('#quizNext')?.addEventListener('click', () => {
-    if (quizAnswered && quizIndex < quizWordOrder.length - 1) {
-      quizIndex++;
-      nextQuiz();
-    } else if (quizAnswered && quizIndex >= quizWordOrder.length - 1) {
-      const fb = $('#quizFeedback');
-      fb.classList.remove('hidden');
-      fb.classList.add('correct');
-      fb.textContent = '퀴즈 끝! ' + quizScore.correct + ' / ' + quizScore.total + ' 맞음';
-      $('#quizChoices').innerHTML = '';
-      quizIndex++;
-    }
-  });
+  (function bindQuizNext() {
+    var qn = $('#quizNext');
+    if (!qn) return;
+    qn.addEventListener('click', function () {
+      if (quizAnswered && quizIndex < quizWordOrder.length - 1) {
+        quizIndex++;
+        nextQuiz();
+      } else if (quizAnswered && quizIndex >= quizWordOrder.length - 1) {
+        const fb = $('#quizFeedback');
+        fb.classList.remove('hidden');
+        fb.classList.add('correct');
+        fb.textContent = '퀴즈 끝! ' + quizScore.correct + ' / ' + quizScore.total + ' 맞음';
+        $('#quizChoices').innerHTML = '';
+        quizIndex++;
+      }
+    });
+  })();
 
   /** 데이터 로드 후: 필터 라벨·옵션. 인칭대명사(격)는 구분(1인칭 단수 등)으로 필터, 퀴즈는 격 유지 */
   function applyFilterUI() {
@@ -1047,7 +1072,7 @@
       if (useCategory) {
         opts = [...new Set(allWords.map(function (w) { return w.category; }).filter(Boolean))].sort();
       } else {
-        opts = [...new Set(allWords.flatMap(function (w) { return getCorrectThemes(w); }))].filter(Boolean).sort();
+        opts = [...new Set(arrayFlatMap(allWords, function (w) { return getCorrectThemes(w); }))].filter(Boolean).sort();
       }
     }
     const sel = document.getElementById('themeFilter');
@@ -1128,39 +1153,41 @@
     }
   });
 
-  document.getElementById('jogbo-test-go')?.addEventListener('click', function () {
-    var sel = document.getElementById('jogbo-test-select-inner');
-    if (!sel) return;
-    var db = (sel.value != null ? String(sel.value) : '').trim();
-    if (window.parent && window.parent !== window) {
+  (function bindJogboChrome() {
+    var jtg = document.getElementById('jogbo-test-go');
+    if (jtg) jtg.addEventListener('click', function () {
+      var sel = document.getElementById('jogbo-test-select-inner');
+      if (!sel) return;
+      var db = (sel.value != null ? String(sel.value) : '').trim();
+      if (window.parent && window.parent !== window) {
+        try {
+          window.parent.postMessage({ type: 'tokpass-jogbo-nav', db: db }, '*');
+        } catch (e) {}
+        return;
+      }
       try {
-        window.parent.postMessage({ type: 'tokpass-jogbo-nav', db: db }, '*');
-      } catch (e) {}
-      return;
-    }
-    try {
-      var u = new URL(window.location.href);
-      if (db) u.searchParams.set('db', db.replace(/-/g, ''));
-      else u.searchParams.delete('db');
-      window.location.assign(u.toString());
-    } catch (e2) {
-      window.location.reload();
-    }
-  });
-
-  // 나가기: 토큰패스 iframe이면 오버레이만 닫기, 연 창이면 포커스, 아니면 닫기 시도
-  document.getElementById('btn-exit-quiz')?.addEventListener('click', function () {
-    if (window.parent && window.parent !== window) {
-      try {
-        window.parent.postMessage({ type: 'tokpass-jogbo-close' }, '*');
-      } catch (e) {}
-      return;
-    }
-    if (window.opener) {
-      try { window.opener.focus(); } catch (e) {}
-    }
-    window.close();
-  });
+        var u = new URL(window.location.href);
+        if (db) u.searchParams.set('db', db.replace(/-/g, ''));
+        else u.searchParams.delete('db');
+        window.location.assign(u.toString());
+      } catch (e2) {
+        window.location.reload();
+      }
+    });
+    var exitBtn = document.getElementById('btn-exit-quiz');
+    if (exitBtn) exitBtn.addEventListener('click', function () {
+      if (window.parent && window.parent !== window) {
+        try {
+          window.parent.postMessage({ type: 'tokpass-jogbo-close' }, '*');
+        } catch (e) {}
+        return;
+      }
+      if (window.opener) {
+        try { window.opener.focus(); } catch (e) {}
+      }
+      window.close();
+    });
+  })();
 
   // ——— 초기화 ———
   loadData().then(() => {
