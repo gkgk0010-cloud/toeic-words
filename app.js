@@ -344,6 +344,26 @@
   var CACHE_TTL_MS = 10 * 60 * 1000; // 10분
   var LOCAL_CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7일 (첫 방문 후 다음 방문부터 바로 표시)
 
+  function tryCacheWordsPayload(cacheKey, obj) {
+    try {
+      var payload = JSON.stringify(obj);
+      if (payload.length > 4500000) {
+        console.warn('words cache skip: payload too large for storage');
+        return;
+      }
+      try {
+        sessionStorage.setItem(cacheKey, payload);
+      } catch (e1) {
+        console.warn('sessionStorage cache failed', e1);
+      }
+      try {
+        localStorage.setItem(cacheKey, payload);
+      } catch (e2) {
+        console.warn('localStorage cache failed (large DB ok without persistent cache)', e2);
+      }
+    } catch (e) {}
+  }
+
   async function loadData() {
     try {
       var search = window.location.search;
@@ -440,11 +460,7 @@
                 applyFilterUI();
                 var view = (window.location.hash || '#cards').slice(1) || 'cards';
                 if (view === 'cards') renderCard();
-                try {
-                  var payload = JSON.stringify({ setTitle: setTitle, themeLabel: themeLabel, categoryLabel: categoryLabel, words: allWords, ts: Date.now() });
-                  sessionStorage.setItem('words_cache_' + id, payload);
-                  localStorage.setItem('words_cache_' + id, payload);
-                } catch (e) {}
+                tryCacheWordsPayload('words_cache_' + id, { setTitle: setTitle, themeLabel: themeLabel, categoryLabel: categoryLabel, words: allWords, ts: Date.now() });
               }
             }).catch(function () {});
           })(dbId);
@@ -471,17 +487,13 @@
             throw new Error(err.error || err.message || res.statusText);
           }
           data = await res.json();
-          try {
-            var payload = JSON.stringify({
-              setTitle: data.setTitle || '',
-              themeLabel: (data.themeLabel && data.themeLabel.trim()) || '',
-              categoryLabel: (data.categoryLabel && data.categoryLabel.trim()) || '',
-              words: data.words || [],
-              ts: Date.now()
-            });
-            sessionStorage.setItem(cacheKey, payload);
-            localStorage.setItem(cacheKey, payload);
-          } catch (e) {}
+          tryCacheWordsPayload(cacheKey, {
+            setTitle: data.setTitle || '',
+            themeLabel: (data.themeLabel && data.themeLabel.trim()) || '',
+            categoryLabel: (data.categoryLabel && data.categoryLabel.trim()) || '',
+            words: data.words || [],
+            ts: Date.now()
+          });
         }
       } else {
         // 없으면 기존 words.json
@@ -516,10 +528,14 @@
         document.getElementById('pageTitle').textContent = '데이터 로드 실패';
       }
       var errEl = document.getElementById('loadError');
+      var em = (e && e.message) ? String(e.message) : '';
+      var hint504 = /504|502|503|timeout|Timeout|Gateway|FUNCTION_INVOCATION/i.test(em)
+        ? '<br><br><b>대용량 DB</b>는 첫 로드에 1분 가까이 걸릴 수 있습니다. 잠시 후 <strong>새로고침</strong>하거나, 네트워크를 확인해 주세요.'
+        : '';
       if (errEl) {
         errEl.innerHTML = isConnectorPage
-          ? '연결사 데이터를 불러오지 못했습니다.<br><small>' + (e && e.message ? e.message : '') + '</small><br><br>노션 DB(연결사) 연결·<b>NOTION_API_KEY</b>·Vercel 환경 변수를 확인해 주세요.'
-          : '데이터를 불러오지 못했습니다.<br><small>' + (e && e.message ? e.message : '') + '</small><br><br>GitHub에 <b>data/words.json</b> 파일이 있는지 확인해 주세요.';
+          ? ('연결사 데이터를 불러오지 못했습니다.<br><small>' + em + '</small>' + hint504 + '<br><br>노션 DB(연결사) 연결·<b>NOTION_API_KEY</b>·Vercel 환경 변수를 확인해 주세요.')
+          : ('데이터를 불러오지 못했습니다.<br><small>' + em + '</small>' + hint504 + '<br><br>노션 연결·<b>NOTION_API_KEY</b>·(기본품사 등) DB 크기가 크면 서버 시간 제한에 걸릴 수 있습니다. <b>data/words.json</b> 로컬 파일은 GitHub에 있는지도 확인해 주세요.');
         errEl.style.display = 'block';
       }
     }
@@ -806,6 +822,11 @@
     ).join('');
     $('#quizFeedback').className = 'quiz-feedback hidden';
     $('#quizFeedback').textContent = '';
+    var jogboHint = document.getElementById('jogboAppScoreLine');
+    if (jogboHint) {
+      jogboHint.textContent = '';
+      jogboHint.classList.add('hidden');
+    }
     $('#quizScore').textContent = quizScore.correct + ' / ' + quizScore.total;
     $$('#quizChoices li').forEach(li => {
       li.addEventListener('click', onQuizChoice);
@@ -1016,6 +1037,26 @@
     if (!data || data.type !== 'tokpass-jogbo-config' || !Array.isArray(data.tests)) return;
     window.__tokpassJogboTests = data.tests;
     renderJogboSwitchBar();
+  });
+
+  /** 메인 앱(부모·opener)에서 점수 반영 후 보내는 확인 — 해설 아래 고정 줄 + 피드백에도 덧붙임 */
+  window.addEventListener('message', function (ev) {
+    var data = ev.data;
+    if (!data || data.type !== 'tokpass-jogbo-score-ack') return;
+    var pts = Number(data.points) || 0;
+    var ns = data.newScore != null ? data.newScore : '';
+    var line = data.ok
+      ? ('📌 앱 점수 ' + (pts > 0 ? '+' + pts + '점' : '반영') + (ns !== '' ? ' (누적 ' + ns + '점)' : ''))
+      : ('⚠ 앱 점수 반영 실패' + (data.msg ? ': ' + data.msg : ''));
+    var hint = document.getElementById('jogboAppScoreLine');
+    if (hint) {
+      hint.textContent = line;
+      hint.classList.remove('hidden');
+    }
+    var fb = document.getElementById('quizFeedback');
+    if (fb && !fb.classList.contains('hidden')) {
+      fb.textContent = (fb.textContent || '') + '\n' + line;
+    }
   });
 
   document.getElementById('jogbo-test-go')?.addEventListener('click', function () {

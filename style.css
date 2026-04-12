@@ -86,6 +86,19 @@ html, body {
   font-size: 0.9rem;
   background: #fff;
 }
+.jogbo-app-score-line {
+  margin-top: 12px;
+  padding: 10px 12px;
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: #047857;
+  background: rgba(16, 185, 129, 0.12);
+  border-radius: 10px;
+  line-height: 1.4;
+  white-space: pre-line;
+}
+.jogbo-app-score-line.hidden { display: none !important; }
+
 .btn-jogbo-go {
   padding: 8px 16px;
   font-size: 0.9rem;

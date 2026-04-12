@@ -161,6 +161,8 @@ module.exports = async function handler(req, res) {
       const data = await queryRes.json();
       allPages = allPages.concat(data.results || []);
       cursor = data.next_cursor || null;
+      /** 대용량 DB: 노션 rate limit·타임아웃 완화 */
+      if (cursor) await new Promise((r) => setTimeout(r, 120));
     } while (cursor);
 
     // 3) 앱용 words 배열. 표가 주격·목적격·소유격·소유대명사 컬럼이면 한 행을 격별로 펼침.
