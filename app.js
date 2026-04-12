@@ -901,6 +901,51 @@
       ' ' + pad(kst.getUTCHours()) + ':' + pad(kst.getUTCMinutes()) + ':' + pad(kst.getUTCSeconds());
   }
 
+  /**
+   * 부모 WebView 없이(외부 브라우저 등) 열린 족보: answer_logs만 넣고 끝나면 students.Score가 안 올라감.
+   * URL의 student_id가 있을 때 REST로 User_Profile_월 행에 +5 (정답만).
+   */
+  async function patchJogboScoreToStudents(correct, studentId, cfg) {
+    if (!correct || !cfg || !cfg.SUPABASE_URL || !cfg.SUPABASE_ANON_KEY) return;
+    var sid = (studentId && String(studentId).trim()) ? String(studentId).trim() : '';
+    if (!sid || sid === 'guest') return;
+    var kst = new Date(Date.now() + 9 * 60 * 60 * 1000);
+    var mo = kst.getUTCMonth() + 1;
+    var month = kst.getUTCFullYear() + '-' + (mo < 10 ? '0' : '') + mo;
+    var sheet = 'User_Profile_' + month;
+    var base = String(cfg.SUPABASE_URL).replace(/\/$/, '');
+    var key = cfg.SUPABASE_ANON_KEY;
+    var h = {
+      apikey: key,
+      Authorization: 'Bearer ' + key,
+      'Content-Type': 'application/json',
+      Prefer: 'return=minimal'
+    };
+    var enc = encodeURIComponent;
+    try {
+      var selUrl =
+        base +
+        '/rest/v1/students?select=Score&User%20ID=eq.' +
+        enc(sid) +
+        '&__sheet_name=eq.' +
+        enc(sheet);
+      var selRes = await fetch(selUrl, { headers: { apikey: key, Authorization: 'Bearer ' + key } });
+      if (!selRes.ok) return;
+      var rows = await selRes.json();
+      if (!Array.isArray(rows) || rows.length === 0) return;
+      var cur = parseInt(rows[0].Score, 10);
+      if (isNaN(cur)) cur = 0;
+      var next = String(cur + 5);
+      var patchUrl =
+        base + '/rest/v1/students?User%20ID=eq.' + enc(sid) + '&__sheet_name=eq.' + enc(sheet);
+      var patchBody = { Score: next, 'Last Active': nowKstString() };
+      var patchRes = await fetch(patchUrl, { method: 'PATCH', headers: h, body: JSON.stringify(patchBody) });
+      if (!patchRes.ok) console.warn('students Score PATCH failed:', patchRes.status, await patchRes.text().catch(function () { return ''; }));
+    } catch (e) {
+      console.warn('patchJogboScoreToStudents:', e);
+    }
+  }
+
   async function logAnswer(correct) {
     var kw = '';
     var meaning = '';
@@ -971,6 +1016,7 @@
         })
       });
       if (!res.ok) throw new Error(res.statusText);
+      await patchJogboScoreToStudents(correct, sidGuest, cfg);
     } catch (e) {
       console.warn('answer_logs insert failed:', e);
     }
