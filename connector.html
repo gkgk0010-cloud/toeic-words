@@ -37,7 +37,10 @@
         <div class="card" id="card">
           <div class="card-face card-front">
             <span class="card-theme-badge" id="cardThemeBadge">—</span>
-            <p class="card-keyword" id="cardKeyword">—</p>
+            <div class="card-keyword-wrap">
+              <p class="card-keyword" id="cardKeyword">—</p>
+              <button type="button" class="btn-speak" id="btnCardSpeak" aria-label="발음 듣기" title="발음 듣기">🔊</button>
+            </div>
             <p class="card-hint">탭하면 뒤집기</p>
           </div>
           <div class="card-face card-back">
@@ -57,7 +60,10 @@
     <section id="view-quiz" class="view view-quiz hidden">
       <p class="quiz-progress-line" id="quizProgressLine" style="margin-bottom:12px; font-size:15px; font-weight:600; color:#4b5563;">0 / 0 문제</p>
       <p class="quiz-question" id="quizQuestion">이 부사는 어느 시제에 쓰이나요?</p>
-      <p class="quiz-word" id="quizWord">—</p>
+      <div class="quiz-word-row">
+        <p class="quiz-word" id="quizWord">—</p>
+        <button type="button" class="btn-speak" id="btnQuizSpeak" aria-label="발음 듣기" title="발음 듣기">🔊</button>
+      </div>
       <ul class="quiz-choices" id="quizChoices"></ul>
       <div class="quiz-feedback hidden" id="quizFeedback"></div>
       <div class="quiz-nav">
@@ -69,7 +75,7 @@
 
   <!-- 연결사 전용: 이 페이지만 항상 연결사 DB 로드 (URL ?db= 무관) -->
   <script>window.FORCE_DB_ID = '2fa6e4c35a0e81cda20ac619508bbeea';</script>
-  <script src="config.js?v=4" defer></script>
-  <script src="app.js?v=4" defer></script>
+  <script src="config.js?v=6" defer></script>
+  <script src="app.js?v=6" defer></script>
 </body>
 </html>

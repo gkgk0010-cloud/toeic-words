@@ -41,7 +41,10 @@
         <div class="card" id="card">
           <div class="card-face card-front">
             <span class="card-theme-badge" id="cardThemeBadge">—</span>
-            <p class="card-keyword" id="cardKeyword">—</p>
+            <div class="card-keyword-wrap">
+              <p class="card-keyword" id="cardKeyword">—</p>
+              <button type="button" class="btn-speak" id="btnCardSpeak" aria-label="발음 듣기" title="발음 듣기">🔊</button>
+            </div>
             <p class="card-hint">탭하면 뒤집기</p>
           </div>
           <div class="card-face card-back">
@@ -62,7 +65,10 @@
     <section id="view-quiz" class="view view-quiz hidden">
       <p class="quiz-progress-line" id="quizProgressLine" style="margin-bottom:12px; font-size:15px; font-weight:600; color:#4b5563;">0 / 0 문제</p>
       <p class="quiz-question" id="quizQuestion">이 부사는 어느 시제에 쓰이나요?</p>
-      <p class="quiz-word" id="quizWord">—</p>
+      <div class="quiz-word-row">
+        <p class="quiz-word" id="quizWord">—</p>
+        <button type="button" class="btn-speak" id="btnQuizSpeak" aria-label="발음 듣기" title="발음 듣기">🔊</button>
+      </div>
       <ul class="quiz-choices" id="quizChoices"></ul>
       <div class="quiz-feedback hidden" id="quizFeedback"></div>
       <div class="quiz-nav">
@@ -72,23 +78,16 @@
     </section>
   </main>
 
-  <script src="config.js?v=5" defer></script>
-  <script src="app.js?v=5" defer></script>
+  <script src="config.js?v=6" defer></script>
+  <script src="app.js?v=6" defer></script>
   <script>
     setTimeout(function() {
       var s = document.getElementById('initStatus');
       if (s && s.textContent.indexOf('로딩 중') >= 0) {
-        s.innerHTML = '로딩이 느립니다. 잠시만 기다려 주세요… (20초 후에도 안 되면 <strong>Ctrl+Shift+R</strong> 강력 새로고침)';
-        s.style.color = '#b45309';
-      }
-    }, 4000);
-    setTimeout(function() {
-      var s = document.getElementById('initStatus');
-      if (s && s.style.display !== 'none' && (s.textContent.indexOf('로딩') >= 0 || s.textContent.indexOf('기다려') >= 0)) {
         s.innerHTML = '스크립트가 끝나지 않았습니다. <strong>Ctrl+Shift+R</strong> 강력 새로고침 후 다시 열어 주세요.';
         s.style.color = '#c00';
       }
-    }, 20000);
+    }, 4000);
   </script>
 </body>
 </html>

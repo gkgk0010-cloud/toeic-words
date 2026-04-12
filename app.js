@@ -39,8 +39,6 @@
   const isConnectorPage = !!(typeof window !== 'undefined' && window.FORCE_DB_ID);
   var CONNECTOR_DB_ID = '2fa6e4c35a0e81cda20ac619508bbeea';
   var PRONOUN_DB_ID = '3016e4c35a0e807ea96af840fc6f6a6a';
-  var BASIC_VOCAB_DB_ID = '31a6e4c35a0e80dfad37f2231f41438d';
-  var PARTICIPLE_DB_ID = '32a6e4c35a0e80128127ebb79d808eb8';
   let allWords = [];
   let filteredWords = [];
   let quizWordOrder = []; // 퀴즈 시 매번 셔플된 순서
@@ -57,6 +55,43 @@
   const $ = (sel, el = document) => el.querySelector(sel);
   const $$ = (sel, el = document) => el.querySelectorAll(sel);
 
+  /** Web Speech API — 단어(keyword) 영어 발음 (수동 버튼 + 카드·퀴즈 등장 시 자동) */
+  var _speakTimer = null;
+  function speakKeyword(text) {
+    if (!text || typeof window.speechSynthesis === 'undefined') return;
+    try {
+      window.speechSynthesis.cancel();
+      var clean = String(text).trim();
+      if (!clean || clean === '—') return;
+      var u = new SpeechSynthesisUtterance(clean);
+      u.lang = 'en-US';
+      u.rate = 0.92;
+      var voices = window.speechSynthesis.getVoices();
+      if (voices && voices.length) {
+        var us = voices.filter(function (v) { return v.lang === 'en-US'; });
+        var en = voices.filter(function (v) { return v.lang && /^en/i.test(v.lang); });
+        if (us.length) u.voice = us[0];
+        else if (en.length) u.voice = en[0];
+      }
+      window.speechSynthesis.speak(u);
+    } catch (e) {}
+  }
+  function scheduleSpeakKeyword(text) {
+    if (_speakTimer) clearTimeout(_speakTimer);
+    _speakTimer = setTimeout(function () {
+      _speakTimer = null;
+      speakKeyword(text);
+    }, 400);
+  }
+  if (typeof window !== 'undefined' && window.speechSynthesis) {
+    try {
+      window.speechSynthesis.getVoices();
+      window.speechSynthesis.addEventListener('voiceschanged', function () {
+        window.speechSynthesis.getVoices();
+      });
+    } catch (e) {}
+  }
+
   function showView(name) {
     $$('.view').forEach(v => v.classList.add('hidden'));
     $$('.nav-link').forEach(l => l.classList.remove('active'));
@@ -65,7 +100,7 @@
     if (view) view.classList.remove('hidden');
     if (link) link.classList.add('active');
     const exitBtn = document.getElementById('btn-exit-quiz');
-    if (exitBtn) exitBtn.style.display = 'inline-block'; // 카드·퀴즈 둘 다 나가기 표시
+    if (exitBtn) exitBtn.style.display = (name === 'quiz') ? 'inline-block' : 'none';
     if (name === 'cards') renderCard();
     if (name === 'quiz') startQuiz();
   }
@@ -79,7 +114,6 @@
 
   var CACHE_TTL_MS = 10 * 60 * 1000; // 10분
   var LOCAL_CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7일 (첫 방문 후 다음 방문부터 바로 표시)
-  var CACHE_VERSION = 4; // 캐시 무효화 (뜻 컬럼 추가 인식 후 재로드)
 
   async function loadData() {
     try {
@@ -106,24 +140,20 @@
       if (dbId) {
         var cacheKey = 'words_cache_' + dbId;
         var instantData = null;
-        var skipCache = (params.get('nocache') === '1' || params.get('nocache') === 'true');
 
-        // 1) 캐시 시도 — nocache=1이면 스킵. sessionStorage → localStorage. 버전·dbId 일치만 사용 (다른 테스트 섞임 방지)
-        if (!skipCache) {
-          try {
-            var raw = sessionStorage.getItem(cacheKey);
-            if (!raw) raw = localStorage.getItem(cacheKey);
-            if (raw) {
-              var cached = JSON.parse(raw);
-              var verOk = (cached.v === CACHE_VERSION);
-              var age = Date.now() - (cached.ts || 0);
-              var ttl = age < CACHE_TTL_MS ? CACHE_TTL_MS : LOCAL_CACHE_TTL_MS;
-              if (verOk && age < ttl && cached.words && cached.words.length > 0) {
-                instantData = { setTitle: cached.setTitle || '', themeLabel: cached.themeLabel || '', categoryLabel: cached.categoryLabel || '', words: cached.words };
-              }
+        // 1) 캐시 시도 — sessionStorage(이번 탭) → localStorage(과거 방문). 같은 dbId만 사용해 내용 섞임 없음.
+        try {
+          var raw = sessionStorage.getItem(cacheKey);
+          if (!raw) raw = localStorage.getItem(cacheKey);
+          if (raw) {
+            var cached = JSON.parse(raw);
+            var age = Date.now() - (cached.ts || 0);
+            var ttl = age < CACHE_TTL_MS ? CACHE_TTL_MS : LOCAL_CACHE_TTL_MS;
+            if (age < ttl && cached.words && cached.words.length > 0) {
+              instantData = { setTitle: cached.setTitle || '', themeLabel: cached.themeLabel || '', categoryLabel: cached.categoryLabel || '', words: cached.words };
             }
-          } catch (e) {}
-        }
+          }
+        } catch (e) {}
 
         // 2) 캐시 없으면 정적 JSON (연결사·인칭대명사 첫 방문에도 바로 표시)
         if (!instantData && (dbId === CONNECTOR_DB_ID || isConnectorPage)) {
@@ -144,17 +174,6 @@
               var pronData = await pronRes.json();
               if (pronData.words && pronData.words.length > 0) {
                 instantData = { setTitle: pronData.setTitle || '인칭대명사표', themeLabel: pronData.themeLabel || '구분', words: pronData.words };
-              }
-            }
-          } catch (e) {}
-        }
-        if (!instantData && dbId === BASIC_VOCAB_DB_ID) {
-          try {
-            var basicRes = await fetch('data/basic-vocab-words.json?t=' + Date.now(), { cache: 'no-store' });
-            if (basicRes.ok) {
-              var basicData = await basicRes.json();
-              if (basicData.words && basicData.words.length > 0) {
-                instantData = { setTitle: basicData.setTitle || '기본어휘품사구별', themeLabel: basicData.themeLabel || '품사', categoryLabel: basicData.categoryLabel || '', words: basicData.words };
               }
             }
           } catch (e) {}
@@ -193,7 +212,7 @@
                 var view = (window.location.hash || '#cards').slice(1) || 'cards';
                 if (view === 'cards') renderCard();
                 try {
-                  var payload = JSON.stringify({ v: CACHE_VERSION, setTitle: setTitle, themeLabel: themeLabel, categoryLabel: categoryLabel, words: allWords, ts: Date.now() });
+                  var payload = JSON.stringify({ setTitle: setTitle, themeLabel: themeLabel, categoryLabel: categoryLabel, words: allWords, ts: Date.now() });
                   sessionStorage.setItem('words_cache_' + id, payload);
                   localStorage.setItem('words_cache_' + id, payload);
                 } catch (e) {}
@@ -225,7 +244,6 @@
           data = await res.json();
           try {
             var payload = JSON.stringify({
-              v: CACHE_VERSION,
               setTitle: data.setTitle || '',
               themeLabel: (data.themeLabel && data.themeLabel.trim()) || '',
               categoryLabel: (data.categoryLabel && data.categoryLabel.trim()) || '',
@@ -342,12 +360,6 @@
       $('#cardExample').textContent = '의미: ' + (meaningParts.length ? meaningParts.join(', ') : '—');
       $('#cardThemeLine').textContent = '격: ' + (themesLabel || '—');
       $('#cardThemeBadge').textContent = cat || themesLabel || '—';
-    } else if (_dbIdFromUrl === BASIC_VOCAB_DB_ID) {
-      // 기본어휘품사구별: 품사 + 뜻 함께 표시 (퀴즈는 품사만)
-      $('#cardThemeBadge').textContent = themesLabel || '—';
-      $('#cardThemeLine').textContent = (themesLabel ? '품사: ' + themesLabel : '—');
-      $('#cardMeaning').textContent = word.meaning ? '뜻: ' + word.meaning : '—';
-      $('#cardExample').textContent = word.example || '';
     } else {
       $('#cardMeaning').textContent = word.meaning;
       $('#cardExample').textContent = word.example;
@@ -357,6 +369,7 @@
     $('#cardIndex').textContent = (cardIndex + 1) + ' / ' + list.length;
     $('#cardPrev').disabled = cardIndex <= 0;
     $('#cardNext').disabled = cardIndex >= list.length - 1;
+    scheduleSpeakKeyword(word.keyword);
   }
 
   function cardPrev() {
@@ -382,6 +395,14 @@
   $('#cardPrev')?.addEventListener('click', cardPrev);
   $('#cardNext')?.addEventListener('click', cardNext);
   $('#card')?.addEventListener('click', cardFlip);
+  $('#btnCardSpeak')?.addEventListener('click', function (e) {
+    e.stopPropagation();
+    var kw = $('#cardKeyword');
+    if (kw && kw.textContent) speakKeyword(kw.textContent.trim());
+  });
+  $('#btnQuizSpeak')?.addEventListener('click', function () {
+    if (currentQuizWord && currentQuizWord.keyword) speakKeyword(currentQuizWord.keyword);
+  });
 
   // ——— 퀴즈 ———
   function shuffle(arr) {
@@ -394,7 +415,7 @@
   }
 
   function pickChoices(correctWord, count) {
-    const others = allWords.filter(w => w.keyword !== correctWord.keyword);
+    const others = filteredWords.filter(w => w.keyword !== correctWord.keyword);
     const shuffled = shuffle(others);
     const choices = [correctWord, ...shuffled.slice(0, count - 1)];
     return shuffle(choices);
@@ -414,23 +435,9 @@
     return shuffle(choices);
   }
 
-  /** 연결사: 데이터에서 나온 카테고리 목록 (중복 제거) - 퀴즈는 전체 기준 */
+  /** 연결사: 데이터에서 나온 카테고리 목록 (중복 제거) */
   function getUniqueCategories() {
-    return [...new Set(allWords.flatMap(function (w) { return getCorrectThemes(w); }))].filter(Boolean).sort();
-  }
-
-  /** 분사 퀴즈: 반대 분사형 생성 (wrong choice용) */
-  function getOppositeParticipleForm(keyword, tema) {
-    var irregulars = { 'written': 'writing', 'writing': 'written' };
-    if (irregulars[keyword]) return irregulars[keyword];
-    if (tema === 'ving') {
-      return keyword.slice(0, -3) + 'ed';
-    } else {
-      if (keyword.endsWith('ied')) return keyword.slice(0, -3) + 'ying';
-      var stripD = keyword.slice(0, -1);
-      if (stripD.endsWith('e')) return stripD.slice(0, -1) + 'ing';
-      return keyword.slice(0, -2) + 'ing';
-    }
+    return [...new Set(filteredWords.flatMap(function (w) { return getCorrectThemes(w); }))].filter(Boolean).sort();
   }
 
   function pickCategoryChoices(primary, allCats, count) {
@@ -443,11 +450,10 @@
   }
 
   function startQuiz() {
-    // 퀴즈는 테마 필터 무관하게 항상 전체 단어로 진행
-    quizWordOrder = shuffle([...allWords]);
+    applyFilter(true);
+    quizWordOrder = shuffle([...filteredWords]);
     quizIndex = 0;
     quizScore = { correct: 0, total: 0 };
-    quizMode = (_dbIdFromUrl === PARTICIPLE_DB_ID) ? 'participle' : 'theme';
     nextQuiz();
   }
 
@@ -469,31 +475,6 @@
     if (progressEl) progressEl.textContent = (quizIndex + 1) + ' / ' + quizWordOrder.length + ' 문제';
     currentQuizWord = quizWordOrder[quizIndex];
     quizAnswered = false;
-
-    // 분사 퀴즈: 예문 빈칸 + 2지선다
-    if (quizMode === 'participle') {
-      var pWord = currentQuizWord;
-      var exFull = pWord.example || '';
-      var exEn = exFull.indexOf(' / ') >= 0 ? exFull.split(' / ')[0] : exFull;
-      var safeKw = pWord.keyword.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-      var exWithBlank = exEn.replace(new RegExp('\\b' + safeKw + '\\b', 'i'), '_______');
-      var pTema = pWord.theme || (pWord.themes && pWord.themes[0]) || 'ving';
-      var correctForm = pWord.keyword;
-      var wrongForm = getOppositeParticipleForm(correctForm, pTema);
-      var pChoices = shuffle([correctForm, wrongForm]);
-      if (progressEl) progressEl.textContent = (quizIndex + 1) + ' / ' + quizWordOrder.length + ' 문제';
-      $('#quizWord').textContent = exWithBlank;
-      $('#quizQuestion').textContent = '빈칸에 알맞은 분사 형태를 고르세요.';
-      $('#quizChoices').innerHTML = pChoices.map(function(t) {
-        return '<li data-theme="' + t.replace(/"/g, '&quot;') + '">' + t + '</li>';
-      }).join('');
-      $('#quizFeedback').className = 'quiz-feedback hidden';
-      $('#quizFeedback').textContent = '';
-      $('#quizScore').textContent = quizScore.correct + ' / ' + quizScore.total;
-      $$('#quizChoices li').forEach(li => { li.addEventListener('click', onQuizChoice); });
-      return;
-    }
-
     const correctThemes = getCorrectThemes(currentQuizWord);
     const primaryTheme = correctThemes[0];
     let choices;
@@ -526,6 +507,7 @@
     $$('#quizChoices li').forEach(li => {
       li.addEventListener('click', onQuizChoice);
     });
+    scheduleSpeakKeyword(currentQuizWord.keyword);
   }
 
   /** 똑패스 "오늘 족보"에 뜨게 하려면 created_at_kst(KST 문자열) 필수 */
@@ -535,47 +517,6 @@
     const pad = (n) => (n < 10 ? '0' : '') + n;
     return kst.getUTCFullYear() + '-' + pad(kst.getUTCMonth() + 1) + '-' + pad(kst.getUTCDate()) +
       ' ' + pad(kst.getUTCHours()) + ':' + pad(kst.getUTCMinutes()) + ':' + pad(kst.getUTCSeconds());
-  }
-
-  /** 현재 월 YYYY-MM (한국 시간) */
-  function monthStrKst() {
-    var kst = new Date(Date.now() + (9 * 60 * 60 * 1000));
-    return kst.getUTCFullYear() + '-' + ('0' + (kst.getUTCMonth() + 1)).slice(-2);
-  }
-
-  async function addWordsScore(uid, isCorrect) {
-    if (!uid || uid === 'guest') return;
-    var cfg = window.APP_CONFIG;
-    if (!cfg || !cfg.SUPABASE_URL || !cfg.SUPABASE_ANON_KEY) return;
-    var delta = isCorrect ? 5 : 0;
-    if (delta === 0) return;
-    var sheetName = 'User_Profile_' + monthStrKst();
-    try {
-      var getRes = await fetch(cfg.SUPABASE_URL + '/rest/v1/students?User%20ID=eq.' + encodeURIComponent(uid) + '&__sheet_name=eq.' + encodeURIComponent(sheetName) + '&select=Score', {
-        headers: { 'apikey': cfg.SUPABASE_ANON_KEY, 'Authorization': 'Bearer ' + cfg.SUPABASE_ANON_KEY }
-      });
-      if (!getRes.ok) return;
-      var rows = await getRes.json();
-      if (!rows || rows.length === 0) return;
-      var currentScore = Number(rows[0].Score) || 0;
-      var newScore = Math.max(0, currentScore + delta);
-      var kst = new Date(Date.now() + 9 * 3600000);
-      var pad = function (n) { return (n < 10 ? '0' : '') + n; };
-      var nowKor = kst.getUTCFullYear() + '-' + pad(kst.getUTCMonth() + 1) + '-' + pad(kst.getUTCDate()) + ' ' + pad(kst.getUTCHours()) + ':' + pad(kst.getUTCMinutes()) + ':' + pad(kst.getUTCSeconds());
-      var patchRes = await fetch(cfg.SUPABASE_URL + '/rest/v1/students?User%20ID=eq.' + encodeURIComponent(uid) + '&__sheet_name=eq.' + encodeURIComponent(sheetName), {
-        method: 'PATCH',
-        headers: {
-          'Content-Type': 'application/json',
-          'apikey': cfg.SUPABASE_ANON_KEY,
-          'Authorization': 'Bearer ' + cfg.SUPABASE_ANON_KEY,
-          'Prefer': 'return=minimal'
-        },
-        body: JSON.stringify({ 'Score': String(newScore), 'Last Active': nowKor })
-      });
-      if (!patchRes.ok) console.warn('words score update failed:', patchRes.status);
-    } catch (e) {
-      console.warn('addWordsScore failed:', e);
-    }
   }
 
   async function logAnswer(correct) {
@@ -608,25 +549,15 @@
     } catch (e) {
       console.warn('answer_logs insert failed:', e);
     }
-    addWordsScore(studentId, correct);
   }
 
   function onQuizChoice(ev) {
     if (quizAnswered) return;
     const li = ev.currentTarget;
     const theme = li.getAttribute('data-theme');
-    let correctThemes, correct, correctLabel;
-
-    if (quizMode === 'participle') {
-      correctThemes = [currentQuizWord.keyword];
-      correct = (theme === currentQuizWord.keyword);
-      correctLabel = currentQuizWord.keyword;
-    } else {
-      correctThemes = getCorrectThemes(currentQuizWord);
-      correct = correctThemes.includes(theme);
-      correctLabel = correctThemes.join(', ') + ' ' + themeLabel;
-    }
-
+    const correctThemes = getCorrectThemes(currentQuizWord);
+    const correct = correctThemes.includes(theme);
+    const correctLabel = correctThemes.join(', ') + ' ' + themeLabel;
     quizAnswered = true;
     quizScore.total++;
     if (correct) quizScore.correct++;
@@ -641,17 +572,7 @@
     const fb = $('#quizFeedback');
     fb.classList.remove('hidden');
     fb.classList.add(correct ? 'correct' : 'wrong');
-    var mainText = correct ? '정답! (+5점)' : '오답. 정답: ' + correctLabel;
-    var hintParts = [];
-    if (currentQuizWord.meaning && String(currentQuizWord.meaning).trim()) {
-      hintParts.push('뜻: ' + String(currentQuizWord.meaning).trim());
-    }
-    if (currentQuizWord.example && String(currentQuizWord.example).trim()) {
-      hintParts.push('예: ' + String(currentQuizWord.example).trim());
-    }
-    var esc = function (s) { return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); };
-    var hintHtml = hintParts.length ? '<br>' + hintParts.map(function (p) { return '<span class="quiz-hint">' + esc(p) + '</span>'; }).join('<br>') : '';
-    fb.innerHTML = mainText + hintHtml;
+    fb.textContent = correct ? '정답!' : '오답. 정답: ' + correctLabel;
     $('#quizScore').textContent = quizScore.correct + ' / ' + quizScore.total;
 
     logAnswer(correct);
@@ -705,7 +626,7 @@
     if (s) s.style.display = 'none';
   }
 
-  // 나가기: 별도 브라우저로 열리면 window.close()로 창 닫기 (앱으로 복귀)
+  // 나가기: 똑패스에서 연 창이면 닫고, 아니면 그냥 닫기 시도
   document.getElementById('btn-exit-quiz')?.addEventListener('click', function () {
     if (window.opener) {
       try { window.opener.focus(); } catch (e) {}

@@ -131,11 +131,40 @@ html, body {
   color: #6a11cb;
   margin-bottom: 8px;
 }
+.card-keyword-wrap {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  width: 100%;
+  margin-bottom: 8px;
+}
+.card-keyword-wrap .card-keyword {
+  margin-bottom: 0;
+}
 .card-keyword {
   font-size: 1.5rem;
   font-weight: 700;
   color: #111;
   margin-bottom: 8px;
+}
+.btn-speak {
+  flex-shrink: 0;
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  border: 1px solid rgba(106, 17, 203, 0.25);
+  background: rgba(255, 255, 255, 0.95);
+  font-size: 1.35rem;
+  cursor: pointer;
+  line-height: 1;
+  padding: 0;
+  -webkit-tap-highlight-color: transparent;
+}
+.btn-speak:active {
+  transform: scale(0.96);
+  background: rgba(106, 17, 203, 0.08);
 }
 .card-hint {
   font-size: 0.8rem;
@@ -181,14 +210,25 @@ html, body {
   color: #4b5563;
   margin-bottom: 12px;
 }
+.quiz-word-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 24px;
+}
 .view-quiz .quiz-word {
   font-size: 1.75rem;
   font-weight: 700;
   color: #111;
-  margin-bottom: 24px;
+  margin-bottom: 0;
   padding: 16px;
   background: rgba(255,255,255,0.9);
   border-radius: 16px;
+}
+.quiz-word-row .quiz-word {
+  margin-bottom: 0;
 }
 .quiz-choices {
   list-style: none;
@@ -254,13 +294,6 @@ html, body {
   padding: 14px;
   border-radius: 12px;
   font-size: 0.95rem;
-}
-.quiz-feedback .quiz-hint {
-  display: block;
-  margin-top: 8px;
-  font-size: 0.85rem;
-  opacity: 0.9;
-  line-height: 1.4;
 }
 .quiz-nav {
   margin-top: 24px;
