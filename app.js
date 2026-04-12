@@ -823,25 +823,33 @@
   }
 
   async function logAnswer(correct) {
-    /** 토큰패스 WebView 전체화면 iframe: 점수·로그는 부모(메인 앱)에서 saveResult·pushAnswerLog 처리 */
+    var kw = '';
+    var meaning = '';
+    if (currentQuizWord) {
+      if (currentQuizWord.keyword != null) kw = String(currentQuizWord.keyword);
+      if (currentQuizWord.meaning != null) meaning = String(currentQuizWord.meaning);
+    }
+    var jogboPayload = {
+      type: 'tokpass-jogbo-answer',
+      correct: !!correct,
+      tag: getTag(),
+      keyword: kw,
+      meaning: meaning
+    };
+    /** 메인 앱 전체화면 iframe — 부모에서 saveResult·pushAnswerLog */
     try {
       if (window.parent && window.parent !== window) {
-        var kw = '';
-        var meaning = '';
-        if (currentQuizWord) {
-          if (currentQuizWord.keyword != null) kw = String(currentQuizWord.keyword);
-          if (currentQuizWord.meaning != null) meaning = String(currentQuizWord.meaning);
-        }
-        window.parent.postMessage({
-          type: 'tokpass-jogbo-answer',
-          correct: !!correct,
-          tag: getTag(),
-          keyword: kw,
-          meaning: meaning
-        }, '*');
+        window.parent.postMessage(jogboPayload, '*');
         return;
       }
     } catch (_pm) {}
+    /** 메인에서 window.open(외부 브라우저/새 창)으로 연 족보 — 예전처럼 opener로 동일 이벤트 전달 */
+    try {
+      if (window.opener && !window.opener.closed) {
+        window.opener.postMessage(jogboPayload, '*');
+        return;
+      }
+    } catch (_op) {}
 
     const cfg = window.APP_CONFIG;
     if (!cfg || !cfg.SUPABASE_URL || !cfg.SUPABASE_ANON_KEY) return;
@@ -900,7 +908,18 @@
     const fb = $('#quizFeedback');
     fb.classList.remove('hidden');
     fb.classList.add(correct ? 'correct' : 'wrong');
-    fb.textContent = correct ? '정답!' : '오답. 정답: ' + correctLabel;
+    var meanLine = '';
+    if (currentQuizWord) {
+      if (themeLabel === '격') {
+        var catG = currentQuizWord.category && String(currentQuizWord.category).trim();
+        var mp = correctThemes.map(function (t) { return getCaseMeaning(catG, t); });
+        if (mp.length) meanLine = '\n의미: ' + mp.join(', ');
+      } else {
+        var m0 = currentQuizWord.meaning && String(currentQuizWord.meaning).trim();
+        if (m0) meanLine = '\n뜻: ' + m0;
+      }
+    }
+    fb.textContent = (correct ? '정답!' : ('오답. 정답: ' + correctLabel)) + meanLine;
     $('#quizScore').textContent = quizScore.correct + ' / ' + quizScore.total;
 
     logAnswer(correct);
@@ -953,8 +972,80 @@
     if (s) s.style.display = 'none';
   }
 
-  // 나가기: 똑패스에서 연 창이면 닫고, 아니면 그냥 닫기 시도
+  function getCurrentDbIdFromUrl() {
+    try {
+      var s = window.location.search || '';
+      if (!s && window.location.href.indexOf('?') >= 0) {
+        s = '?' + window.location.href.split('?').slice(1).join('?');
+      }
+      var p = new URLSearchParams(s);
+      return (p.get('db') || '').replace(/-/g, '');
+    } catch (e) {
+      return '';
+    }
+  }
+
+  function renderJogboSwitchBar() {
+    var bar = document.getElementById('jogbo-switch-bar');
+    var sel = document.getElementById('jogbo-test-select-inner');
+    if (!bar || !sel) return;
+    var tests = window.__tokpassJogboTests;
+    if (!tests || !tests.length) return;
+    var curDb = getCurrentDbIdFromUrl();
+    if (isConnectorPage && window.FORCE_DB_ID) {
+      curDb = String(window.FORCE_DB_ID).trim().replace(/-/g, '');
+    }
+    var selIdx = 0;
+    for (var j = 0; j < tests.length; j++) {
+      var dbj = String(tests[j].db != null ? tests[j].db : '').replace(/-/g, '');
+      if (dbj === curDb) {
+        selIdx = j;
+        break;
+      }
+    }
+    sel.innerHTML = tests.map(function (t, i) {
+      var db = String(t.db != null ? t.db : '').replace(/-/g, '');
+      var name = String(t.name || (db || '테스트')).replace(/</g, '&lt;').replace(/>/g, '&gt;');
+      return '<option value="' + db.replace(/"/g, '&quot;') + '"' + (i === selIdx ? ' selected' : '') + '>' + name + '</option>';
+    }).join('');
+    bar.classList.remove('hidden');
+  }
+
+  window.addEventListener('message', function (ev) {
+    var data = ev.data;
+    if (!data || data.type !== 'tokpass-jogbo-config' || !Array.isArray(data.tests)) return;
+    window.__tokpassJogboTests = data.tests;
+    renderJogboSwitchBar();
+  });
+
+  document.getElementById('jogbo-test-go')?.addEventListener('click', function () {
+    var sel = document.getElementById('jogbo-test-select-inner');
+    if (!sel) return;
+    var db = (sel.value != null ? String(sel.value) : '').trim();
+    if (window.parent && window.parent !== window) {
+      try {
+        window.parent.postMessage({ type: 'tokpass-jogbo-nav', db: db }, '*');
+      } catch (e) {}
+      return;
+    }
+    try {
+      var u = new URL(window.location.href);
+      if (db) u.searchParams.set('db', db.replace(/-/g, ''));
+      else u.searchParams.delete('db');
+      window.location.assign(u.toString());
+    } catch (e2) {
+      window.location.reload();
+    }
+  });
+
+  // 나가기: 토큰패스 iframe이면 오버레이만 닫기, 연 창이면 포커스, 아니면 닫기 시도
   document.getElementById('btn-exit-quiz')?.addEventListener('click', function () {
+    if (window.parent && window.parent !== window) {
+      try {
+        window.parent.postMessage({ type: 'tokpass-jogbo-close' }, '*');
+      } catch (e) {}
+      return;
+    }
     if (window.opener) {
       try { window.opener.focus(); } catch (e) {}
     }
