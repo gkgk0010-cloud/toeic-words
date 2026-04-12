@@ -276,6 +276,35 @@
     }, 400);
   }
 
+  /** 부모(똑패스)가 Android에서만 보냄 — 부모 WebView는 Google TTS/speechSynthesis가 막히는 경우가 많아 iframe(Vercel origin)에서 재생 */
+  window.addEventListener('message', function (ev) {
+    try {
+      if (!window.parent || ev.source !== window.parent) return;
+      var p = ev.data;
+      if (!p || p.type !== 'tokpass-iframe-tts') return;
+      var t = String(p.text || '').trim();
+      if (!t || t === '—') return;
+      function ack(ok) {
+        try {
+          window.parent.postMessage({ type: 'tokpass-speak-ack', ok: !!ok }, '*');
+        } catch (e) {}
+      }
+      try {
+        if (isAndroidUA()) {
+          void speakViaGoogleAudio(t).then(function (ok) {
+            if (!ok) speakKeywordWeb(t);
+            ack(true);
+          });
+        } else {
+          speakKeywordWeb(t);
+          ack(true);
+        }
+      } catch (e) {
+        ack(false);
+      }
+    } catch (e) {}
+  });
+
   if (typeof window !== 'undefined' && window.speechSynthesis) {
     try {
       window.speechSynthesis.getVoices();
