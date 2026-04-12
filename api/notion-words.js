@@ -46,6 +46,19 @@ function findPropIdByOrder(schema, orderedNames) {
   return null;
 }
 
+/** 같은 노션 속성이 category·theme 둘 다에 잡히면 퀴즈/뜻이 꼬임 → theme 쪽에서 제외 */
+function findPropIdByOrderExcluding(schema, orderedNames, excludeId) {
+  if (!excludeId) return findPropIdByOrder(schema, orderedNames);
+  for (const want of orderedNames) {
+    for (const [id, def] of Object.entries(schema)) {
+      if (id === excludeId) continue;
+      const name = (def && def.name) ? String(def.name).trim() : '';
+      if (name === want) return id;
+    }
+  }
+  return null;
+}
+
 module.exports = async function handler(req, res) {
   if (req.method !== 'GET') {
     res.setHeader('Allow', 'GET');
@@ -104,12 +117,20 @@ module.exports = async function handler(req, res) {
       return name || '';
     }
     const useWideTable = Object.keys(caseColumnIds).length >= 2;
-    const categoryId = findPropIdByOrder(schema, ['구분', '분류', '종류', '인칭', '인칭/수']);
+    /** 기본어휘 품사·구별: 컬럼명이 "품사" "구" 인 DB가 많음 — 반드시 category로만 매핑 */
+    const categoryId = findPropIdByOrder(schema, [
+      '품사', '구', '품사·구', '품사 / 구', 'POS', 'word class', '형태',
+      '구분', '분류', '종류', '인칭', '인칭/수'
+    ]);
 
     const keyId = useWideTable ? null : findPropIdByOrder(schema, ['키워드', 'keyword', 'Keyword', 'Name', '단어', '주격', '목적격', '소유격', '이름', '제목', '구분']);
-    const meaningId = findPropIdByOrder(schema, ['뜻/설명', '뜻', 'meaning', 'Meaning', '구분', '분류', '주격', '소유격', '목적격']);
+    /** 뜻: 구분·분류는 품사 컬럼으로 쓰는 DB가 많아 여기 넣으면 뜻이 품사로 채워짐 → 제외 */
+    const meaningId = findPropIdByOrder(schema, ['뜻/설명', '뜻', 'meaning', 'Meaning', '주격', '소유격', '목적격']);
     const exampleId = findPropId(schema, ['예문', 'example', 'Example', '소유격', '목적격']);
-    const themeId = useWideTable ? null : findPropIdByOrder(schema, ['격', 'case', 'Case', '테마', 'theme', 'Theme', '시제', '카테고리', '구분', '분류']);
+    /** 시제·카테고리(연결사 등). 품사/분류 컬럼은 categoryId와 동일하면 제외 */
+    const themeId = useWideTable
+      ? null
+      : findPropIdByOrderExcluding(schema, ['격', 'case', 'Case', '테마', 'theme', 'Theme', '시제', '카테고리', '구분', '분류'], categoryId);
 
     const themeLabel = useWideTable ? '격' : (themeId && schema[themeId] && schema[themeId].name ? schema[themeId].name : '테마');
     const categoryLabel = categoryId && schema[categoryId] && schema[categoryId].name ? schema[categoryId].name : '분류';
