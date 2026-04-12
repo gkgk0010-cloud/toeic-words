@@ -5,6 +5,9 @@
   "functions": {
     "api/notion-words.js": {
       "maxDuration": 60
+    },
+    "api/jogbo-score.js": {
+      "maxDuration": 30
     }
   },
   "headers": [

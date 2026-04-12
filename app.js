@@ -850,6 +850,52 @@
       if (currentQuizWord.keyword != null) kw = String(currentQuizWord.keyword);
       if (currentQuizWord.meaning != null) meaning = String(currentQuizWord.meaning);
     }
+    var search = window.location.search || '';
+    if (!search && window.location.href.indexOf('?') >= 0) {
+      search = '?' + window.location.href.split('?').slice(1).join('?');
+    }
+    var params = new URLSearchParams(search);
+    var studentId = (params.get('student_id') || params.get('user') || '').trim();
+    var jogboSig = (params.get('jogbo_sig') || '').trim();
+
+    /** Vercel api/jogbo-score — 삼성 인터넷 등 opener 끊겨도 Supabase에 직접 +5 (메인과 동일 서명) */
+    if (studentId && studentId !== 'guest' && jogboSig.length >= 16) {
+      try {
+        var origin = window.location.origin || '';
+        if (origin && /^https?:/i.test(origin)) {
+          var apiRes = await fetch(origin + '/api/jogbo-score', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              uid: studentId,
+              correct: !!correct,
+              tag: getTag(),
+              jogbo_sig: jogboSig
+            })
+          });
+          var apiJson = await apiRes.json().catch(function () { return {}; });
+          if (apiRes.ok && apiJson.newScore != null) {
+            var ns = apiJson.newScore;
+            var sync = { type: 'tokpass-jogbo-score-sync', newScore: ns, correct: !!correct, tag: getTag() };
+            try {
+              if (window.parent && window.parent !== window) window.parent.postMessage(sync, '*');
+            } catch (_e1) {}
+            try {
+              if (window.opener && !window.opener.closed) window.opener.postMessage(sync, '*');
+            } catch (_e2) {}
+            var hint = document.getElementById('jogboAppScoreLine');
+            if (hint) {
+              hint.textContent = correct
+                ? ('📌 앱 점수 +5점 (누적 ' + ns + '점)')
+                : ('📌 누적 ' + ns + '점');
+              hint.classList.remove('hidden');
+            }
+            return;
+          }
+        }
+      } catch (_api) {}
+    }
+
     var jogboPayload = {
       type: 'tokpass-jogbo-answer',
       correct: !!correct,
