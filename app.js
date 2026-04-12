@@ -923,12 +923,26 @@
     try {
       if (window.parent && window.parent !== window) {
         window.parent.postMessage(jogboPayload, '*');
+        var hint0 = document.getElementById('jogboAppScoreLine');
+        if (hint0) {
+          hint0.textContent = correct
+            ? '📌 똑패스에 전송함 · +5점 반영 대기…'
+            : '📌 똑패스에 전송함 · 오답 기록 대기…';
+          hint0.classList.remove('hidden');
+        }
         return;
       }
     } catch (_pm) {}
     try {
       if (window.opener && !window.opener.closed) {
         window.opener.postMessage(jogboPayload, '*');
+        var hint1 = document.getElementById('jogboAppScoreLine');
+        if (hint1) {
+          hint1.textContent = correct
+            ? '📌 똑패스에 전송함 · +5점 반영 대기…'
+            : '📌 똑패스에 전송함 · 오답 기록 대기…';
+          hint1.classList.remove('hidden');
+        }
         return;
       }
     } catch (_op) {}
@@ -1136,9 +1150,14 @@
     if (!data || data.type !== 'tokpass-jogbo-score-ack') return;
     var pts = Number(data.points) || 0;
     var ns = data.newScore != null ? data.newScore : '';
-    var line = data.ok
-      ? ('📌 앱 점수 ' + (pts > 0 ? '+' + pts + '점' : '반영') + (ns !== '' ? ' (누적 ' + ns + '점)' : ''))
-      : ('⚠ 앱 점수 반영 실패' + (data.msg ? ': ' + data.msg : ''));
+    var line;
+    if (data.ok && data.pending) {
+      line = '📌 똑패스 점수 반영 중…' + (ns !== '' ? ' (현재 ' + ns + '점)' : '');
+    } else if (data.ok) {
+      line = '📌 앱 점수 ' + (pts > 0 ? '+' + pts + '점' : '반영') + (ns !== '' ? ' (누적 ' + ns + '점)' : '');
+    } else {
+      line = '⚠ 앱 점수 반영 실패' + (data.msg ? ': ' + data.msg : '');
+    }
     var hint = document.getElementById('jogboAppScoreLine');
     if (hint) {
       hint.textContent = line;
