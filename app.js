@@ -96,6 +96,24 @@
   /** 접속사/전치사/부사 덱: 선택지가 한글 뜻인 경우 */
   let quizGradeByMeaning = false;
 
+  /** 퀴즈 탭에서 품사/뜻 라디오 바꿀 때, 채점 전이면 같은 문항을 새 모드로 즉시 갱신 */
+  function bindQuizDimensionLiveRefresh() {
+    var row = document.getElementById('quiz-dimension-row');
+    if (!row) return;
+    row.addEventListener('change', function (ev) {
+      var t = ev.target;
+      if (!t || t.name !== 'quizDim') return;
+      try {
+        var vq = document.getElementById('view-quiz');
+        if (!vq || vq.classList.contains('hidden')) return;
+      } catch (e1) {}
+      if (!isPrepConjAdvStyleDeck()) return;
+      if (!quizWordOrder.length || quizIndex < 0 || quizIndex >= quizWordOrder.length) return;
+      if (quizAnswered) return;
+      nextQuiz();
+    });
+  }
+
   const $ = (sel, el = document) => el.querySelector(sel);
   const $$ = (sel, el = document) => el.querySelectorAll(sel);
 
@@ -1176,6 +1194,8 @@
       }
     });
   })();
+
+  bindQuizDimensionLiveRefresh();
 
   /** 데이터 로드 후: 필터 라벨·옵션. 인칭대명사(격)는 구분(1인칭 단수 등)으로 필터, 퀴즈는 격 유지 */
   function applyFilterUI() {
