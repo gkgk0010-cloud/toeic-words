@@ -93,6 +93,8 @@
   let quizMode = 'theme'; // 이번 세트는 시제 맞추기만
   /** 퀴즈 정답이 theme이 아니라 category(품사·구 등)인지 — onQuizChoice에서 사용 */
   let quizGradeByCategory = false;
+  /** 접속사/전치사/부사 덱: 선택지가 한글 뜻인 경우 */
+  let quizGradeByMeaning = false;
 
   const $ = (sel, el = document) => el.querySelector(sel);
   const $$ = (sel, el = document) => el.querySelectorAll(sel);
@@ -384,7 +386,10 @@
     const exitBtn = document.getElementById('btn-exit-quiz');
     if (exitBtn) exitBtn.style.display = (name === 'quiz') ? 'inline-block' : 'none';
     if (name === 'cards') renderCard();
-    if (name === 'quiz') startQuiz();
+    if (name === 'quiz') {
+      syncQuizDimensionRow();
+      startQuiz();
+    }
   }
 
   function parseHash() {
@@ -503,11 +508,13 @@
               if (apiData && apiData.words && apiData.words.length > 0) {
                 setTitle = apiData.setTitle || setTitle;
                 themeLabel = (apiData.themeLabel && apiData.themeLabel.trim()) || themeLabel;
+                categoryLabel = (apiData.categoryLabel && apiData.categoryLabel.trim()) || categoryLabel;
                 allWords = apiData.words || [];
                 applyFilter();
                 if (document.getElementById('pageTitle')) document.getElementById('pageTitle').textContent = setTitle;
                 document.title = setTitle + ' · 똑패스';
                 applyFilterUI();
+                syncQuizDimensionRow();
                 var view = (window.location.hash || '#cards').slice(1) || 'cards';
                 if (view === 'cards') renderCard();
                 tryCacheWordsPayload('words_cache_v3_' + id, { setTitle: setTitle, themeLabel: themeLabel, categoryLabel: categoryLabel, words: allWords, ts: Date.now() });
@@ -648,6 +655,8 @@
     $('#cardKeyword').textContent = word.keyword;
     const themesLabel = getCorrectThemes(word).join(', ');
     var catStr = word.category && String(word.category).trim();
+    var badgeEl = $('#cardThemeBadge');
+    if (badgeEl) badgeEl.classList.remove('card-theme-badge--hidden');
     if (themeLabel === '격') {
       // 뒷면: 구분만 + 의미(격별 설명, 코드 매핑) + 격
       var cat = word.category && String(word.category).trim() ? word.category : '';
@@ -656,7 +665,17 @@
       var meaningParts = themes.map(function (t) { return getCaseMeaning(cat, t); });
       $('#cardExample').textContent = '의미: ' + (meaningParts.length ? meaningParts.join(', ') : '—');
       $('#cardThemeLine').textContent = '격: ' + (themesLabel || '—');
-      $('#cardThemeBadge').textContent = cat || themesLabel || '—';
+      if (badgeEl) badgeEl.textContent = cat || themesLabel || '—';
+    } else if (isPrepConjAdvStyleDeck()) {
+      if (badgeEl) badgeEl.classList.add('card-theme-badge--hidden');
+      $('#cardThemeBadge').textContent = '';
+      var catPrep = catStr || '—';
+      var lab = categoryLabel ? String(categoryLabel).trim() : '품사';
+      $('#cardMeaning').textContent = lab + ': ' + catPrep;
+      var meanPrep = word.meaning && String(word.meaning).trim();
+      $('#cardExample').textContent = meanPrep ? ('뜻: ' + meanPrep) : '—';
+      var exPrep = word.example && String(word.example).trim();
+      $('#cardThemeLine').textContent = exPrep ? ('예문: ' + exPrep) : '';
     } else {
       $('#cardMeaning').textContent = word.meaning;
       $('#cardExample').textContent = word.example;
@@ -737,6 +756,44 @@
     return [...new Set(allWords.map(function (w) {
       return w.category && String(w.category).trim();
     }).filter(Boolean))].sort();
+  }
+
+  /** 전치사·접속사·부사 족보: 노션 분류 컬럼명에「품사」가 있거나, 고유값이 세 품사만 일 때 */
+  function isPrepConjAdvStyleDeck() {
+    if (!isCategoryDrivenDeck()) return false;
+    if (themeLabel === '격') return false;
+    if (categoryLabel && /품사|\bPOS\b/i.test(String(categoryLabel))) return true;
+    var uc = getUniqueCategoryValues();
+    if (uc.length < 2) return false;
+    var ok = { '전치사': 1, '접속사': 1, '부사': 1 };
+    return uc.every(function (c) { return ok[c]; });
+  }
+
+  function getUniqueMeanings() {
+    return [...new Set(allWords.map(function (w) {
+      return w.meaning && String(w.meaning).trim();
+    }).filter(Boolean))].sort();
+  }
+
+  function getQuizDimension() {
+    try {
+      var row = document.getElementById('quiz-dimension-row');
+      if (!row || row.classList.contains('hidden')) return 'pos';
+      var inp = row.querySelector('input[name="quizDim"]:checked');
+      return inp && inp.value === 'meaning' ? 'meaning' : 'pos';
+    } catch (e) {
+      return 'pos';
+    }
+  }
+
+  function syncQuizDimensionRow() {
+    var row = document.getElementById('quiz-dimension-row');
+    if (!row) return;
+    if (isPrepConjAdvStyleDeck()) {
+      row.classList.remove('hidden');
+    } else {
+      row.classList.add('hidden');
+    }
   }
 
   /**
@@ -828,6 +885,7 @@
     currentQuizWord = quizWordOrder[quizIndex];
     quizAnswered = false;
     quizGradeByCategory = false;
+    quizGradeByMeaning = false;
     const correctThemes = getCorrectThemes(currentQuizWord);
     const primaryTheme = correctThemes[0] || '현재';
     let choices;
@@ -836,6 +894,9 @@
     const uniqueCats = getUniqueCategoryValues();
     const useCategoryQuiz = !!(themeLabel !== '격' && isCategoryDrivenDeck() &&
       currentQuizWord.category && String(currentQuizWord.category).trim());
+    var keywordStr = currentQuizWord.keyword && String(currentQuizWord.keyword).trim();
+    var meaningQuizMode = !!(isPrepConjAdvStyleDeck() && getQuizDimension() === 'meaning' &&
+      currentQuizWord.meaning && String(currentQuizWord.meaning).trim());
 
     if (themeLabel === '격') {
       // 격 퀴즈: 선택지는 항상 주격·목적격·소유격·소유대명사·재귀대명사 중 4개 (같은 격만 나오는 것 방지)
@@ -843,6 +904,12 @@
       if (caseChoices.length < 2) caseChoices = CASE_TYPES.slice();
       choices = pickCategoryChoices(primaryTheme, caseChoices, 4);
       questionText = '이 단어는 무슨 격에 쓰이나요?';
+    } else if (meaningQuizMode) {
+      quizGradeByMeaning = true;
+      var primaryMean = String(currentQuizWord.meaning).trim();
+      var allMeans = getUniqueMeanings();
+      choices = pickCategoryChoices(primaryMean, allMeans.length ? allMeans : [primaryMean], 4);
+      questionText = (keywordStr ? ('「' + keywordStr + '」') : '이 표현') + '의 뜻으로 알맞은 것은?';
     } else if (useCategoryQuiz) {
       // 기본어휘 품사·구별 등: 노션 category 기준
       quizGradeByCategory = true;
@@ -871,8 +938,15 @@
     $('#quizWord').textContent = currentQuizWord.keyword;
     var qm = $('#quizMeaning');
     if (qm) {
-      var mean = currentQuizWord.meaning && String(currentQuizWord.meaning).trim();
-      qm.textContent = mean || '—';
+      var spoilFreeQuizLine = themeLabel === '격' || isPrepConjAdvStyleDeck();
+      if (spoilFreeQuizLine) {
+        qm.textContent = '';
+        qm.classList.add('hidden');
+      } else {
+        var meanShown = currentQuizWord.meaning && String(currentQuizWord.meaning).trim();
+        qm.textContent = meanShown || '—';
+        qm.classList.remove('hidden');
+      }
     }
     $('#quizQuestion').textContent = questionText;
     $('#quizChoices').innerHTML = choices.map((t) =>
@@ -1026,14 +1100,24 @@
     if (quizAnswered) return;
     const li = ev.currentTarget;
     const theme = li.getAttribute('data-theme');
-    var correctThemes = quizGradeByCategory && currentQuizWord.category
-      ? [String(currentQuizWord.category).trim()]
-      : getCorrectThemes(currentQuizWord);
-    if (!correctThemes.length && !quizGradeByCategory) correctThemes = ['현재'];
-    const correct = correctThemes.includes(theme);
-    const correctLabel = quizGradeByCategory
-      ? (correctThemes.join(', ') + ' (' + (categoryLabel || '분류') + ')')
-      : (correctThemes.join(', ') + ' ' + themeLabel);
+    var correctThemes;
+    var correct;
+    var correctLabel;
+    if (quizGradeByMeaning) {
+      var okM = String(currentQuizWord.meaning || '').trim();
+      correct = String(theme || '').trim() === okM;
+      correctThemes = okM ? [okM] : [];
+      correctLabel = okM + ' (뜻)';
+    } else if (quizGradeByCategory && currentQuizWord.category) {
+      correctThemes = [String(currentQuizWord.category).trim()];
+      correct = correctThemes.includes(theme);
+      correctLabel = correctThemes.join(', ') + ' (' + (categoryLabel || '분류') + ')';
+    } else {
+      correctThemes = getCorrectThemes(currentQuizWord);
+      if (!correctThemes.length && !quizGradeByCategory) correctThemes = ['현재'];
+      correct = correctThemes.includes(theme);
+      correctLabel = correctThemes.join(', ') + ' ' + themeLabel;
+    }
     quizAnswered = true;
     quizScore.total++;
     if (correct) quizScore.correct++;
@@ -1041,8 +1125,13 @@
     $$('#quizChoices li').forEach(el => {
       el.classList.add('disabled');
       const elTheme = el.getAttribute('data-theme');
-      if (correctThemes.includes(elTheme)) el.classList.add('correct');
-      else if (el === li && !correct) el.classList.add('wrong');
+      if (quizGradeByMeaning) {
+        var okMm = correctThemes.length ? correctThemes[0] : '';
+        if (String(elTheme || '').trim() === okMm && okMm) el.classList.add('correct');
+      } else {
+        if (correctThemes.includes(elTheme)) el.classList.add('correct');
+      }
+      if (el === li && !correct) el.classList.add('wrong');
     });
 
     const fb = $('#quizFeedback');
@@ -1050,7 +1139,10 @@
     fb.classList.add(correct ? 'correct' : 'wrong');
     var meanLine = '';
     if (currentQuizWord) {
-      if (themeLabel === '격') {
+      if (quizGradeByMeaning) {
+        var ct = currentQuizWord.category ? String(currentQuizWord.category).trim() : '';
+        if (categoryLabel && ct) meanLine = '\n' + categoryLabel + ': ' + ct;
+      } else if (themeLabel === '격') {
         var catG = currentQuizWord.category && String(currentQuizWord.category).trim();
         var mp = correctThemes.map(function (t) { return getCaseMeaning(catG, t); });
         if (mp.length) meanLine = '\n의미: ' + mp.join(', ');
@@ -1111,6 +1203,7 @@
     sel.innerHTML = '<option value="">전체</option>' + opts.map(function (c) {
       return '<option value="' + String(c).replace(/"/g, '&quot;') + '">' + String(c) + '</option>';
     }).join('');
+    syncQuizDimensionRow();
   }
 
   function hideInitStatus() {

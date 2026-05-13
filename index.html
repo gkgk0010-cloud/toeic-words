@@ -78,6 +78,11 @@
     <!-- 퀴즈 뷰 (시제 맞추기만) -->
     <section id="view-quiz" class="view view-quiz hidden">
       <p class="quiz-progress-line" id="quizProgressLine" style="margin-bottom:12px; font-size:15px; font-weight:600; color:#4b5563;">0 / 0 문제</p>
+      <div id="quiz-dimension-row" class="quiz-dimension-row hidden" role="group" aria-label="출제 방식">
+        <span class="quiz-dimension-label">매칭</span>
+        <label class="quiz-dim-opt"><input type="radio" name="quizDim" value="pos" checked> 품사</label>
+        <label class="quiz-dim-opt"><input type="radio" name="quizDim" value="meaning"> 뜻</label>
+      </div>
       <p class="quiz-question" id="quizQuestion">이 부사는 어느 시제에 쓰이나요?</p>
       <div class="quiz-word-row">
         <p class="quiz-word" id="quizWord">—</p>
@@ -95,7 +100,7 @@
   </main>
 
   <script src="config.js?v=6" defer></script>
-  <script src="app.js?v=26" defer onerror="(function(){var e=document.getElementById('loadError'),i=document.getElementById('initStatus');if(e){e.style.display='block';e.innerHTML='app.js를 불러오지 못했습니다. 비행기모드·차단 해제 후 <strong>캐시 삭제</strong>하고 새로고침하세요.';}if(i){i.style.display='none';}})()"></script>
+  <script src="app.js?v=27" defer onerror="(function(){var e=document.getElementById('loadError'),i=document.getElementById('initStatus');if(e){e.style.display='block';e.innerHTML='app.js를 불러오지 못했습니다. 비행기모드·차단 해제 후 <strong>캐시 삭제</strong>하고 새로고침하세요.';}if(i){i.style.display='none';}})()"></script>
   <script>
     /** 여전히 "로딩 중"(인라인 스크립트까지 실행 안 됨)일 때만 — 대부분 HTML 캐시 꼬임 */
     setTimeout(function() {
