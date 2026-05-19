@@ -93,6 +93,8 @@
   let quizMode = 'theme'; // 이번 세트는 시제 맞추기만
   /** 퀴즈 정답이 theme이 아니라 category(품사·구 등)인지 — onQuizChoice에서 사용 */
   let quizGradeByCategory = false;
+  /** to부정사/(동)명사·전치사+동명사 2지선다 족보 — 기존 품사/연결사 퀴즈와 분리 */
+  let quizGradeByPairing = false;
   /** 접속사/전치사/부사 덱: 선택지가 한글 뜻인 경우 */
   let quizGradeByMeaning = false;
 
@@ -630,6 +632,8 @@
         const themes = (w.themes && w.themes.length) ? w.themes : (w.theme ? [w.theme] : []);
         return themes.includes(val);
       });
+    } else if (isBinaryPairingDeck()) {
+      filteredWords = allWords.filter(function (w) { return getWordQuizAnswer(w) === val; });
     } else if (useCategoryForFilter) {
       filteredWords = allWords.filter(function (w) { return w.category === val; });
     } else {
@@ -694,6 +698,13 @@
       $('#cardExample').textContent = meanPrep ? ('뜻: ' + meanPrep) : '—';
       var exPrep = word.example && String(word.example).trim();
       $('#cardThemeLine').textContent = exPrep ? ('예문: ' + exPrep) : '';
+    } else if (isBinaryPairingDeck()) {
+      var pairAns = getWordQuizAnswer(word) || catStr || '—';
+      if (badgeEl) badgeEl.classList.remove('card-theme-badge--hidden');
+      $('#cardThemeBadge').textContent = pairAns;
+      $('#cardMeaning').textContent = word.meaning && String(word.meaning).trim() ? word.meaning : '—';
+      $('#cardExample').textContent = word.example && String(word.example).trim() ? word.example : '—';
+      $('#cardThemeLine').textContent = '짝: ' + pairAns;
     } else {
       $('#cardMeaning').textContent = word.meaning;
       $('#cardExample').textContent = word.example;
@@ -776,6 +787,48 @@
     }).filter(Boolean))].sort();
   }
 
+  /** 노션「카테고리」열이 theme으로 매핑된 DB도 포함 — 2지선다 족보용 */
+  function getQuizClassificationValues() {
+    var set = {};
+    allWords.forEach(function (w) {
+      if (w.category && String(w.category).trim()) set[String(w.category).trim()] = 1;
+      getCorrectThemes(w).forEach(function (t) {
+        if (t && String(t).trim()) set[String(t).trim()] = 1;
+      });
+    });
+    return Object.keys(set).sort();
+  }
+
+  function isCategoryValueSet(expected, pool) {
+    var uc = pool || getQuizClassificationValues();
+    if (uc.length !== expected.length) return false;
+    var a = uc.slice().sort();
+    var b = expected.slice().sort();
+    for (var i = 0; i < a.length; i++) {
+      if (a[i] !== b[i]) return false;
+    }
+    return true;
+  }
+
+  function isToInfGerundPairDeck() {
+    return isCategoryValueSet(['to부정사', '(동)명사']);
+  }
+
+  function isGerundPrepPairDeck() {
+    return isCategoryValueSet(['동명사와 짝', '동명사와 짝 불가능']);
+  }
+
+  function isBinaryPairingDeck() {
+    return isToInfGerundPairDeck() || isGerundPrepPairDeck();
+  }
+
+  function getWordQuizAnswer(word) {
+    if (!word) return '';
+    if (word.category && String(word.category).trim()) return String(word.category).trim();
+    var th = getCorrectThemes(word);
+    return th.length ? String(th[0]).trim() : '';
+  }
+
   /** 전치사·접속사·부사 족보: 노션 분류 컬럼명에「품사」가 있거나, 고유값이 세 품사만 일 때 */
   function isPrepConjAdvStyleDeck() {
     if (!isCategoryDrivenDeck()) return false;
@@ -820,6 +873,7 @@
    */
   function isCategoryDrivenDeck() {
     if (themeLabel === '격') return false;
+    if (isBinaryPairingDeck()) return false;
     var uc = getUniqueCategoryValues();
     if (uc.length < 2) return false;
     var onlyTenseLabels = uc.every(function (c) {
@@ -871,8 +925,12 @@
   function startQuiz() {
     /** 퀴즈는 항상 전체 단어 기준(카드에서 품사 필터를 걸어도 동일 문항·동일 선택지 풀) */
     var list = allWords.slice();
-    /** 품사·구별 덱: category 없는 행은 퀴즈에서 제외 */
-    if (themeLabel !== '격' && isCategoryDrivenDeck()) {
+    /** 2지선다 족보: 짝(category/theme) 없는 행 제외 */
+    if (themeLabel !== '격' && isBinaryPairingDeck()) {
+      var withPair = list.filter(function (w) { return getWordQuizAnswer(w); });
+      if (withPair.length >= 1) list = withPair;
+    } else if (themeLabel !== '격' && isCategoryDrivenDeck()) {
+      /** 품사·구별 덱: category 없는 행은 퀴즈에서 제외 */
       var withCat = list.filter(function (w) { return w.category && String(w.category).trim(); });
       if (withCat.length >= 1) list = withCat;
     }
@@ -903,6 +961,7 @@
     currentQuizWord = quizWordOrder[quizIndex];
     quizAnswered = false;
     quizGradeByCategory = false;
+    quizGradeByPairing = false;
     quizGradeByMeaning = false;
     const correctThemes = getCorrectThemes(currentQuizWord);
     const primaryTheme = correctThemes[0] || '현재';
@@ -928,6 +987,20 @@
       var allMeans = getUniqueMeanings();
       choices = pickCategoryChoices(primaryMean, allMeans.length ? allMeans : [primaryMean], 4);
       questionText = (keywordStr ? ('「' + keywordStr + '」') : '이 표현') + '의 뜻으로 알맞은 것은?';
+    } else if (isToInfGerundPairDeck()) {
+      quizGradeByPairing = true;
+      quizGradeByCategory = true;
+      var pairPool = getQuizClassificationValues();
+      var pairAns = getWordQuizAnswer(currentQuizWord);
+      choices = pickCategoryChoices(pairAns, pairPool, 2);
+      questionText = '이 단어와 어울리는 짝은?';
+    } else if (isGerundPrepPairDeck()) {
+      quizGradeByPairing = true;
+      quizGradeByCategory = true;
+      var prepPool = getQuizClassificationValues();
+      var prepAns = getWordQuizAnswer(currentQuizWord);
+      choices = pickCategoryChoices(prepAns, prepPool, 2);
+      questionText = '이 전치사는 동명사와 잘 어울리나요?';
     } else if (useCategoryQuiz) {
       // 기본어휘 품사·구별 등: 노션 category 기준
       quizGradeByCategory = true;
@@ -956,7 +1029,7 @@
     $('#quizWord').textContent = currentQuizWord.keyword;
     var qm = $('#quizMeaning');
     if (qm) {
-      var spoilFreeQuizLine = themeLabel === '격' || isPrepConjAdvStyleDeck();
+      var spoilFreeQuizLine = themeLabel === '격' || isPrepConjAdvStyleDeck() || isBinaryPairingDeck();
       if (spoilFreeQuizLine) {
         qm.textContent = '';
         qm.classList.add('hidden');
@@ -1126,10 +1199,13 @@
       correct = String(theme || '').trim() === okM;
       correctThemes = okM ? [okM] : [];
       correctLabel = okM + ' (뜻)';
-    } else if (quizGradeByCategory && currentQuizWord.category) {
-      correctThemes = [String(currentQuizWord.category).trim()];
+    } else if (quizGradeByCategory && (currentQuizWord.category || quizGradeByPairing)) {
+      var graded = getWordQuizAnswer(currentQuizWord);
+      correctThemes = graded ? [graded] : [];
       correct = correctThemes.includes(theme);
-      correctLabel = correctThemes.join(', ') + ' (' + (categoryLabel || '분류') + ')';
+      correctLabel = quizGradeByPairing
+        ? correctThemes.join(', ')
+        : correctThemes.join(', ') + ' (' + (categoryLabel || '분류') + ')';
     } else {
       correctThemes = getCorrectThemes(currentQuizWord);
       if (!correctThemes.length && !quizGradeByCategory) correctThemes = ['현재'];
@@ -1167,6 +1243,8 @@
       } else {
         var m0 = currentQuizWord.meaning && String(currentQuizWord.meaning).trim();
         if (m0) meanLine = '\n뜻: ' + m0;
+        var ex0 = currentQuizWord.example && String(currentQuizWord.example).trim();
+        if (quizGradeByPairing && ex0) meanLine += '\n예문: ' + ex0;
       }
     }
     fb.textContent = correct
@@ -1210,6 +1288,9 @@
     } else if (themeLabel === '격') {
       if (labelEl) labelEl.textContent = themeLabel;
       opts = CASE_TYPES.slice();
+    } else if (isBinaryPairingDeck()) {
+      if (labelEl) labelEl.textContent = '짝';
+      opts = getQuizClassificationValues();
     } else {
       if (labelEl) labelEl.textContent = useCategory ? (categoryLabel || '분류') : themeLabel;
       if (useCategory) {
