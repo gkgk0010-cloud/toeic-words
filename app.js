@@ -97,6 +97,8 @@
   let quizGradeByPairing = false;
   /** 접속사/전치사/부사 덱: 선택지가 한글 뜻인 경우 */
   let quizGradeByMeaning = false;
+  /** 빈칸+명사 분사: 예문 빈칸 + ing/ed 형태 2지선다 */
+  let quizGradeByParticipleBlank = false;
 
   /** 퀴즈 탭에서 품사/뜻 라디오 바꿀 때, 채점 전이면 같은 문항을 새 모드로 즉시 갱신 */
   function bindQuizDimensionLiveRefresh() {
@@ -634,6 +636,11 @@
       });
     } else if (isBinaryPairingDeck()) {
       filteredWords = allWords.filter(function (w) { return getWordQuizAnswer(w) === val; });
+    } else if (isParticipleBlankDeck()) {
+      filteredWords = allWords.filter(function (w) {
+        var th = getCorrectThemes(w);
+        return getWordQuizAnswer(w) === val || th.indexOf(val) >= 0;
+      });
     } else if (useCategoryForFilter) {
       filteredWords = allWords.filter(function (w) { return w.category === val; });
     } else {
@@ -822,6 +829,98 @@
     return isToInfGerundPairDeck() || isGerundPrepPairDeck();
   }
 
+  /** 테마·분류 값이 ving/ved(또는 ing/ed)만이면 예문 빈칸 분사 퀴즈 */
+  function isParticipleBlankDeck() {
+    if (themeLabel === '격') return false;
+    if (isBinaryPairingDeck()) return false;
+    var pool = getQuizClassificationValues().map(function (v) {
+      return String(v || '').trim().toLowerCase();
+    }).filter(Boolean);
+    if (pool.length < 2) return false;
+    return pool.every(function (v) {
+      return v === 'ving' || v === 'ved' || v === 'ing' || v === 'ed' || v === '-ing' || v === '-ed';
+    });
+  }
+
+  function normalizePartTheme(raw) {
+    var t = String(raw || '').trim().toLowerCase();
+    if (t === 'ing' || t === '-ing' || t === 'ving') return 'ving';
+    if (t === 'ed' || t === '-ed' || t === 'ved') return 'ved';
+    return t;
+  }
+
+  function parseExampleEnglish(example) {
+    var ex = String(example || '').trim();
+    if (!ex) return '';
+    var idx = ex.indexOf(' / ');
+    if (idx >= 0) return ex.slice(0, idx).trim();
+    idx = ex.indexOf('/');
+    if (idx >= 0) {
+      var before = ex.slice(0, idx).trim();
+      var after = ex.slice(idx + 1).trim();
+      if (/[a-zA-Z]/.test(before)) return before;
+      if (/[a-zA-Z]/.test(after)) return after;
+    }
+    return ex;
+  }
+
+  function blankKeywordInText(text, keyword) {
+    if (!text || !keyword) return text || '';
+    var kw = String(keyword).trim();
+    var escaped = kw.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    var re = new RegExp('\\b' + escaped + '\\b', 'i');
+    if (!re.test(text)) re = new RegExp(escaped, 'i');
+    if (!re.test(text)) return text;
+    return text.replace(re, '______');
+  }
+
+  /** ving 정답 → -ed 오답, ved 정답 → -ing 오답 (규칙 기반, 수동 짝 없음) */
+  function flipParticipleKeyword(keyword, themeRaw) {
+    var t = normalizePartTheme(themeRaw);
+    var w = String(keyword || '').trim();
+    if (!w) return '';
+    if (t === 'ving') {
+      if (/ying$/i.test(w)) return w.slice(0, -4) + 'ied';
+      if (/ing$/i.test(w)) {
+        var stem = w.slice(0, -3);
+        if (/e$/i.test(stem)) return stem.slice(0, -1) + 'ed';
+        return stem + 'ed';
+      }
+      return w + 'ed';
+    }
+    if (t === 'ved') {
+      if (/ied$/i.test(w)) return w.slice(0, -3) + 'ying';
+      if (/ed$/i.test(w)) {
+        var withoutD = w.slice(0, -1);
+        if (/e$/i.test(withoutD)) return withoutD.slice(0, -1) + 'ing';
+        return w.slice(0, -2) + 'ing';
+      }
+      return w + 'ing';
+    }
+    return w + 'ed';
+  }
+
+  function getParticipleThemeForWord(word) {
+    if (!word) return '';
+    if (word.category && String(word.category).trim()) return String(word.category).trim();
+    var th = getCorrectThemes(word);
+    return th.length ? String(th[0]).trim() : '';
+  }
+
+  function canParticipleBlankQuiz(word) {
+    if (!word || !word.keyword || !word.example) return false;
+    var kw = String(word.keyword).trim();
+    if (!kw) return false;
+    var eng = parseExampleEnglish(word.example);
+    if (!eng) return false;
+    var blanked = blankKeywordInText(eng, kw);
+    if (!blanked || blanked === eng) return false;
+    var theme = getParticipleThemeForWord(word);
+    if (!normalizePartTheme(theme)) return false;
+    var alt = flipParticipleKeyword(kw, theme);
+    return !!(alt && alt.toLowerCase() !== kw.toLowerCase());
+  }
+
   function getWordQuizAnswer(word) {
     if (!word) return '';
     if (word.category && String(word.category).trim()) return String(word.category).trim();
@@ -929,6 +1028,9 @@
     if (themeLabel !== '격' && isBinaryPairingDeck()) {
       var withPair = list.filter(function (w) { return getWordQuizAnswer(w); });
       if (withPair.length >= 1) list = withPair;
+    } else if (isParticipleBlankDeck()) {
+      var pbList = list.filter(canParticipleBlankQuiz);
+      if (pbList.length >= 1) list = pbList;
     } else if (themeLabel !== '격' && isCategoryDrivenDeck()) {
       /** 품사·구별 덱: category 없는 행은 퀴즈에서 제외 */
       var withCat = list.filter(function (w) { return w.category && String(w.category).trim(); });
@@ -963,6 +1065,7 @@
     quizGradeByCategory = false;
     quizGradeByPairing = false;
     quizGradeByMeaning = false;
+    quizGradeByParticipleBlank = false;
     const correctThemes = getCorrectThemes(currentQuizWord);
     const primaryTheme = correctThemes[0] || '현재';
     let choices;
@@ -981,6 +1084,13 @@
       if (caseChoices.length < 2) caseChoices = CASE_TYPES.slice();
       choices = pickCategoryChoices(primaryTheme, caseChoices, 4);
       questionText = '이 단어는 무슨 격에 쓰이나요?';
+    } else if (isParticipleBlankDeck() && canParticipleBlankQuiz(currentQuizWord)) {
+      quizGradeByParticipleBlank = true;
+      var pKw = String(currentQuizWord.keyword).trim();
+      var pTheme = getParticipleThemeForWord(currentQuizWord);
+      var pAlt = flipParticipleKeyword(pKw, pTheme);
+      choices = shuffle([pKw, pAlt]);
+      questionText = '빈칸에 알맞은 단어를 고르세요.';
     } else if (meaningQuizMode) {
       quizGradeByMeaning = true;
       var primaryMean = String(currentQuizWord.meaning).trim();
@@ -1026,10 +1136,18 @@
       choices = pickThemeChoices(primaryTheme, 4);
       questionText = '이 단어는 어느 ' + themeLabel + '에 쓰이나요?';
     }
-    $('#quizWord').textContent = currentQuizWord.keyword;
+    var quizWordEl = $('#quizWord');
+    if (quizGradeByParticipleBlank) {
+      var engLine = parseExampleEnglish(currentQuizWord.example);
+      quizWordEl.textContent = blankKeywordInText(engLine, String(currentQuizWord.keyword).trim()) || engLine;
+      quizWordEl.classList.add('quiz-word-sentence');
+    } else {
+      quizWordEl.textContent = currentQuizWord.keyword;
+      quizWordEl.classList.remove('quiz-word-sentence');
+    }
     var qm = $('#quizMeaning');
     if (qm) {
-      var spoilFreeQuizLine = themeLabel === '격' || isPrepConjAdvStyleDeck() || isBinaryPairingDeck();
+      var spoilFreeQuizLine = themeLabel === '격' || isPrepConjAdvStyleDeck() || isBinaryPairingDeck() || quizGradeByParticipleBlank;
       if (spoilFreeQuizLine) {
         qm.textContent = '';
         qm.classList.add('hidden');
@@ -1040,9 +1158,9 @@
       }
     }
     $('#quizQuestion').textContent = questionText;
-    $('#quizChoices').innerHTML = choices.map((t) =>
-      '<li data-theme="' + (t || '').replace(/"/g, '&quot;') + '">' + (t || '') + '</li>'
-    ).join('');
+    $('#quizChoices').innerHTML = choices.map(function (t) {
+      return '<li data-theme="' + (t || '').replace(/"/g, '&quot;') + '">' + (t || '') + '</li>';
+    }).join('');
     $('#quizFeedback').className = 'quiz-feedback hidden';
     $('#quizFeedback').textContent = '';
     var jogboHint = document.getElementById('jogboAppScoreLine');
@@ -1054,7 +1172,7 @@
     $$('#quizChoices li').forEach(li => {
       li.addEventListener('click', onQuizChoice);
     });
-    scheduleSpeakKeyword(currentQuizWord.keyword);
+    scheduleSpeakKeyword(quizGradeByParticipleBlank ? parseExampleEnglish(currentQuizWord.example) : currentQuizWord.keyword);
   }
 
   /** 똑패스 "오늘 족보"에 뜨게 하려면 created_at_kst(KST 문자열) 필수 */
@@ -1199,6 +1317,11 @@
       correct = String(theme || '').trim() === okM;
       correctThemes = okM ? [okM] : [];
       correctLabel = okM + ' (뜻)';
+    } else if (quizGradeByParticipleBlank) {
+      var okKw = String(currentQuizWord.keyword || '').trim();
+      correct = String(theme || '').trim().toLowerCase() === okKw.toLowerCase();
+      correctThemes = okKw ? [okKw] : [];
+      correctLabel = okKw;
     } else if (quizGradeByCategory && (currentQuizWord.category || quizGradeByPairing)) {
       var graded = getWordQuizAnswer(currentQuizWord);
       correctThemes = graded ? [graded] : [];
@@ -1222,6 +1345,9 @@
       if (quizGradeByMeaning) {
         var okMm = correctThemes.length ? correctThemes[0] : '';
         if (String(elTheme || '').trim() === okMm && okMm) el.classList.add('correct');
+      } else if (quizGradeByParticipleBlank) {
+        var okKk = correctThemes.length ? correctThemes[0] : '';
+        if (okKk && String(elTheme || '').trim().toLowerCase() === String(okKk).trim().toLowerCase()) el.classList.add('correct');
       } else {
         if (correctThemes.includes(elTheme)) el.classList.add('correct');
       }
@@ -1240,6 +1366,9 @@
         var catG = currentQuizWord.category && String(currentQuizWord.category).trim();
         var mp = correctThemes.map(function (t) { return getCaseMeaning(catG, t); });
         if (mp.length) meanLine = '\n의미: ' + mp.join(', ');
+      } else if (quizGradeByParticipleBlank) {
+        var exPart = parseExampleEnglish(currentQuizWord.example);
+        if (exPart) meanLine = '\n예문: ' + exPart;
       } else {
         var m0 = currentQuizWord.meaning && String(currentQuizWord.meaning).trim();
         if (m0) meanLine = '\n뜻: ' + m0;
@@ -1291,6 +1420,9 @@
     } else if (isBinaryPairingDeck()) {
       if (labelEl) labelEl.textContent = '짝';
       opts = getQuizClassificationValues();
+    } else if (isParticipleBlankDeck()) {
+      if (labelEl) labelEl.textContent = themeLabel || '테마';
+      opts = getUniqueCategories();
     } else {
       if (labelEl) labelEl.textContent = useCategory ? (categoryLabel || '분류') : themeLabel;
       if (useCategory) {
@@ -1420,7 +1552,23 @@
   })();
 
   // ——— 초기화 ———
+  var _bootStallTimer = setTimeout(function () {
+    hideInitStatus();
+    var errEl = document.getElementById('loadError');
+    if (errEl) {
+      errEl.textContent = '데이터 로드가 지연되고 있습니다. 네트워크 확인 후 새로고침해 주세요.';
+      errEl.style.display = 'block';
+    }
+    var s = document.getElementById('initStatus');
+    if (s) {
+      s.textContent = '로드 지연 — 새로고침해 주세요.';
+      s.style.color = '#c00';
+      s.style.display = 'block';
+    }
+  }, 35000);
+
   loadData().then(() => {
+    clearTimeout(_bootStallTimer);
     try {
       applyFilterUI();
       showView(parseHash());
@@ -1434,6 +1582,7 @@
       if (s) { s.textContent = '화면 오류: ' + (e.message || e); s.style.color = '#c00'; s.style.display = 'block'; }
     }
   }).catch(function (e) {
+    clearTimeout(_bootStallTimer);
     console.error('loadData error', e);
     hideInitStatus();
     var errEl = document.getElementById('loadError');

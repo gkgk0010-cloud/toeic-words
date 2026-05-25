@@ -311,8 +311,11 @@ html, body {
   background: rgba(255,255,255,0.9);
   border-radius: 16px;
 }
-.quiz-word-row .quiz-word {
-  margin-bottom: 0;
+.view-quiz .quiz-word.quiz-word-sentence {
+  font-size: 1.05rem;
+  font-weight: 600;
+  line-height: 1.55;
+  text-align: left;
 }
 .quiz-choices {
   list-style: none;
