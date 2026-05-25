@@ -532,6 +532,7 @@
                 themeLabel = (apiData.themeLabel && apiData.themeLabel.trim()) || themeLabel;
                 categoryLabel = (apiData.categoryLabel && apiData.categoryLabel.trim()) || categoryLabel;
                 allWords = apiData.words || [];
+                invalidateDeckKindCache();
                 applyFilter();
                 if (document.getElementById('pageTitle')) document.getElementById('pageTitle').textContent = setTitle;
                 document.title = setTitle + ' · 똑패스';
@@ -584,6 +585,7 @@
       themeLabel = (data.themeLabel && data.themeLabel.trim()) || (isConnectorPage ? '카테고리' : '시제');
       categoryLabel = (data.categoryLabel && data.categoryLabel.trim()) || '';
       allWords = data.words || [];
+      invalidateDeckKindCache();
       applyFilter();
       document.getElementById('pageTitle').textContent = setTitle;
       document.title = setTitle + ' · 똑패스';
@@ -603,6 +605,7 @@
       console.error('Failed to load words:', e);
       allWords = [];
       filteredWords = [];
+      invalidateDeckKindCache();
       if (document.getElementById('pageTitle')) {
         document.getElementById('pageTitle').textContent = '데이터 로드 실패';
       }
@@ -787,30 +790,27 @@
     return shuffle(choices);
   }
 
-  /** 단어당 정답 시제. 품사·구 DB(고유 category 2개 이상)는 시제 미입력 시 '현재'로 채우지 않음 — API에 categoryLabel 없어도 동일 적용 */
-  /** 전체 DB 기준(카드 필터와 무관) — 퀴즈 선택지·품사 모드 판별에 사용 */
-  function getUniqueCategoryValues() {
-    return [...new Set(allWords.map(function (w) {
-      return w.category && String(w.category).trim();
-    }).filter(Boolean))].sort();
+  /** theme/themes만 읽음 — 덱 판별(isCategoryDrivenDeck 등) 호출 없음. getQuizClassificationValues 순환 재귀 방지 */
+  function getWordThemeValues(word) {
+    if (!word) return [];
+    if (word.themes && Array.isArray(word.themes) && word.themes.length) {
+      return word.themes.map(function (t) { return String(t).trim(); }).filter(Boolean);
+    }
+    if (word.theme != null && String(word.theme).trim() !== '') {
+      return [String(word.theme).trim()];
+    }
+    return [];
   }
 
-  /** 노션「카테고리」열이 theme으로 매핑된 DB도 포함 — 2지선다 족보용 */
-  function getQuizClassificationValues() {
-    var set = {};
-    allWords.forEach(function (w) {
-      if (w.category && String(w.category).trim()) set[String(w.category).trim()] = 1;
-      getCorrectThemes(w).forEach(function (t) {
-        if (t && String(t).trim()) set[String(t).trim()] = 1;
-      });
-    });
-    return Object.keys(set).sort();
+  var _deckKindCache = null;
+
+  function invalidateDeckKindCache() {
+    _deckKindCache = null;
   }
 
-  function isCategoryValueSet(expected, pool) {
-    var uc = pool || getQuizClassificationValues();
-    if (uc.length !== expected.length) return false;
-    var a = uc.slice().sort();
+  function sortedValueSetMatch(pool, expected) {
+    if (pool.length !== expected.length) return false;
+    var a = pool.slice().sort();
     var b = expected.slice().sort();
     for (var i = 0; i < a.length; i++) {
       if (a[i] !== b[i]) return false;
@@ -818,29 +818,95 @@
     return true;
   }
 
+  /** 대용량 DB(1200+)에서 덱 타입·분류값을 한 번만 계산 — 무한 재귀·반복 스캔 방지 */
+  function getDeckKindCache() {
+    if (_deckKindCache) return _deckKindCache;
+    var uniqueCategoryValues = [...new Set(allWords.map(function (w) {
+      return w.category && String(w.category).trim();
+    }).filter(Boolean))].sort();
+
+    var quizSet = {};
+    allWords.forEach(function (w) {
+      if (w.category && String(w.category).trim()) quizSet[String(w.category).trim()] = 1;
+      getWordThemeValues(w).forEach(function (t) { quizSet[t] = 1; });
+    });
+    var quizClassificationValues = Object.keys(quizSet).sort();
+
+    var toInfGerund = sortedValueSetMatch(quizClassificationValues, ['to부정사', '(동)명사']);
+    var gerundPrep = sortedValueSetMatch(quizClassificationValues, ['동명사와 짝', '동명사와 짝 불가능']);
+    var binaryPairing = toInfGerund || gerundPrep;
+
+    var categoryDriven = false;
+    if (themeLabel !== '격' && !binaryPairing && uniqueCategoryValues.length >= 2) {
+      categoryDriven = !uniqueCategoryValues.every(function (c) { return THEMES.indexOf(c) >= 0; });
+    }
+
+    var participleBlank = false;
+    if (themeLabel !== '격' && !binaryPairing) {
+      var poolLower = quizClassificationValues.map(function (v) {
+        return String(v || '').trim().toLowerCase();
+      }).filter(Boolean);
+      if (poolLower.length >= 2) {
+        participleBlank = poolLower.every(function (v) {
+          return v === 'ving' || v === 'ved' || v === 'ing' || v === 'ed' || v === '-ing' || v === '-ed';
+        });
+      }
+    }
+
+    var prepConjAdv = false;
+    if (categoryDriven && themeLabel !== '격') {
+      if (categoryLabel && /품사|\bPOS\b/i.test(String(categoryLabel))) {
+        prepConjAdv = true;
+      } else if (uniqueCategoryValues.length >= 2) {
+        var okPos = { '전치사': 1, '접속사': 1, '부사': 1 };
+        prepConjAdv = uniqueCategoryValues.every(function (c) { return okPos[c]; });
+      }
+    }
+
+    _deckKindCache = {
+      uniqueCategoryValues: uniqueCategoryValues,
+      quizClassificationValues: quizClassificationValues,
+      categoryDriven: categoryDriven,
+      binaryPairing: binaryPairing,
+      toInfGerund: toInfGerund,
+      gerundPrep: gerundPrep,
+      participleBlank: participleBlank,
+      prepConjAdv: prepConjAdv
+    };
+    return _deckKindCache;
+  }
+
+  /** 단어당 정답 시제. 품사·구 DB(고유 category 2개 이상)는 시제 미입력 시 '현재'로 채우지 않음 — API에 categoryLabel 없어도 동일 적용 */
+  /** 전체 DB 기준(카드 필터와 무관) — 퀴즈 선택지·품사 모드 판별에 사용 */
+  function getUniqueCategoryValues() {
+    return getDeckKindCache().uniqueCategoryValues;
+  }
+
+  /** 노션「카테고리」열이 theme으로 매핑된 DB도 포함 — 2지선다 족보용 */
+  function getQuizClassificationValues() {
+    return getDeckKindCache().quizClassificationValues;
+  }
+
+  function isCategoryValueSet(expected, pool) {
+    var uc = pool || getQuizClassificationValues();
+    return sortedValueSetMatch(uc, expected);
+  }
+
   function isToInfGerundPairDeck() {
-    return isCategoryValueSet(['to부정사', '(동)명사']);
+    return getDeckKindCache().toInfGerund;
   }
 
   function isGerundPrepPairDeck() {
-    return isCategoryValueSet(['동명사와 짝', '동명사와 짝 불가능']);
+    return getDeckKindCache().gerundPrep;
   }
 
   function isBinaryPairingDeck() {
-    return isToInfGerundPairDeck() || isGerundPrepPairDeck();
+    return getDeckKindCache().binaryPairing;
   }
 
   /** 테마·분류 값이 ving/ved(또는 ing/ed)만이면 예문 빈칸 분사 퀴즈 */
   function isParticipleBlankDeck() {
-    if (themeLabel === '격') return false;
-    if (isBinaryPairingDeck()) return false;
-    var pool = getQuizClassificationValues().map(function (v) {
-      return String(v || '').trim().toLowerCase();
-    }).filter(Boolean);
-    if (pool.length < 2) return false;
-    return pool.every(function (v) {
-      return v === 'ving' || v === 'ved' || v === 'ing' || v === 'ed' || v === '-ing' || v === '-ed';
-    });
+    return getDeckKindCache().participleBlank;
   }
 
   function normalizePartTheme(raw) {
@@ -929,15 +995,8 @@
     return th.length ? String(th[0]).trim() : '';
   }
 
-  /** 전치사·접속사·부사 족보: 노션 분류 컬럼명에「품사」가 있거나, 고유값이 세 품사만 일 때 */
   function isPrepConjAdvStyleDeck() {
-    if (!isCategoryDrivenDeck()) return false;
-    if (themeLabel === '격') return false;
-    if (categoryLabel && /품사|\bPOS\b/i.test(String(categoryLabel))) return true;
-    var uc = getUniqueCategoryValues();
-    if (uc.length < 2) return false;
-    var ok = { '전치사': 1, '접속사': 1, '부사': 1 };
-    return uc.every(function (c) { return ok[c]; });
+    return getDeckKindCache().prepConjAdv;
   }
 
   function getUniqueMeanings() {
@@ -967,20 +1026,8 @@
     }
   }
 
-  /**
-   * 품사·구 퀴즈 모드. 노션이 category에 시제를 복사해 두는 경우가 있어,
-   * 고유 category가 전부 THEMES(현재·과거·미래·현재완료) 안에만 있으면 시제 덱으로 본다.
-   */
   function isCategoryDrivenDeck() {
-    if (themeLabel === '격') return false;
-    if (isBinaryPairingDeck()) return false;
-    var uc = getUniqueCategoryValues();
-    if (uc.length < 2) return false;
-    var onlyTenseLabels = uc.every(function (c) {
-      return THEMES.indexOf(c) >= 0;
-    });
-    if (onlyTenseLabels) return false;
-    return true;
+    return getDeckKindCache().categoryDriven;
   }
 
   /** 필터/applyFilter용: API에 categoryLabel 없어도 품사 컬럼만 시제 네 종류가 아니면 분류 필터 사용 */
@@ -994,8 +1041,8 @@
 
   /** 단어당 정답 시제. theme 하나 또는 themes 배열(중복 정답). */
   function getCorrectThemes(word) {
-    if (word.themes && Array.isArray(word.themes) && word.themes.length) return word.themes.map(String);
-    if (word.theme != null && String(word.theme).trim() !== '') return [String(word.theme).trim()];
+    var raw = getWordThemeValues(word);
+    if (raw.length) return raw;
     if (isCategoryDrivenDeck()) return [];
     if (categoryLabel && themeLabel !== '시제' && themeLabel !== '격') return [];
     return ['현재'];
