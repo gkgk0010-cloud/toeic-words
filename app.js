@@ -764,6 +764,7 @@
     });
     var btnQ = $('#btnQuizSpeak');
     if (btnQ) btnQ.addEventListener('click', function () {
+      if (quizGradeByParticipleBlank) return;
       primeSpeechFromUserTap();
       if (currentQuizWord && currentQuizWord.keyword) speakKeyword(currentQuizWord.keyword);
     });
@@ -1168,11 +1169,16 @@
       jogboHint.textContent = '';
       jogboHint.classList.add('hidden');
     }
+    var btnQuizSpeak = $('#btnQuizSpeak');
+    if (btnQuizSpeak) {
+      if (quizGradeByParticipleBlank) btnQuizSpeak.style.display = 'none';
+      else btnQuizSpeak.style.display = '';
+    }
     $('#quizScore').textContent = quizScore.correct + ' / ' + quizScore.total;
     $$('#quizChoices li').forEach(li => {
       li.addEventListener('click', onQuizChoice);
     });
-    scheduleSpeakKeyword(quizGradeByParticipleBlank ? parseExampleEnglish(currentQuizWord.example) : currentQuizWord.keyword);
+    if (!quizGradeByParticipleBlank) scheduleSpeakKeyword(currentQuizWord.keyword);
   }
 
   /** 똑패스 "오늘 족보"에 뜨게 하려면 created_at_kst(KST 문자열) 필수 */
