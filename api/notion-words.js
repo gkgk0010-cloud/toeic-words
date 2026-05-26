@@ -63,6 +63,116 @@ function findPropIdByOrderExcluding(schema, orderedNames, excludeId) {
   return null;
 }
 
+function normalizeCaseName(name) {
+  if (name === '소유 대명사') return '소유대명사';
+  if (name && /재귀/.test(name)) return '재귀대명사';
+  return name || '';
+}
+
+function pagesToWords(allPages, ctx) {
+  const {
+    useWideTable,
+    caseColumnIds,
+    categoryId,
+    keyId,
+    meaningId,
+    exampleId,
+    themeId
+  } = ctx;
+
+  if (useWideTable) {
+    const byKey = {};
+    for (const page of allPages) {
+      const categoryVal = categoryId ? getPropPlain(page, categoryId) : '';
+      for (const [caseName, propId] of Object.entries(caseColumnIds)) {
+        const keyword = getPropPlain(page, propId);
+        if (!keyword || keyword.trim() === '-' || keyword.trim() === '') continue;
+        const themeVal = normalizeCaseName(caseName);
+        const key = (categoryVal || '') + '|' + keyword.trim();
+        if (!byKey[key]) {
+          byKey[key] = {
+            keyword: keyword.trim(),
+            meaning: themeVal,
+            example: '',
+            category: categoryVal || themeVal,
+            themes: []
+          };
+        }
+        if (byKey[key].themes.indexOf(themeVal) === -1) byKey[key].themes.push(themeVal);
+      }
+    }
+    return Object.values(byKey).map((w) => {
+      w.meaning = w.themes.join(', ');
+      if (w.themes.length === 1) w.theme = w.themes[0];
+      return w;
+    });
+  }
+
+  return allPages.map((page) => {
+    const keyword = getPropPlain(page, keyId);
+    const meaning = meaningId ? getPropPlain(page, meaningId) : '';
+    const example = exampleId ? getPropPlain(page, exampleId) : '';
+    const multi = themeId ? getPropMultiSelect(page, themeId) : [];
+    const singleTheme = themeId && !multi.length ? getPropPlain(page, themeId) : '';
+    const categoryMulti = categoryId ? getPropMultiSelect(page, categoryId) : [];
+    const categorySingle = categoryId && !categoryMulti.length ? getPropPlain(page, categoryId) : '';
+
+    const word = { keyword, meaning, example };
+    if (multi.length) word.themes = multi;
+    else if (singleTheme) word.theme = singleTheme;
+    if (categoryMulti.length) word.category = categoryMulti[0];
+    else if (categorySingle) word.category = categorySingle;
+    else if (word.themes && word.themes.length) word.category = word.themes[0];
+    else if (word.theme) word.category = word.theme;
+    return word;
+  }).filter((w) => w.keyword);
+}
+
+function resolveSchemaContext(schema) {
+  const CASE_COLUMN_NAMES = ['주격', '목적격', '소유격', '소유대명사', '소유 대명사', '재귀대명사'];
+  const caseColumnIds = {};
+  for (const [id, def] of Object.entries(schema)) {
+    const name = (def && def.name) ? String(def.name).trim() : '';
+    if (CASE_COLUMN_NAMES.includes(name)) caseColumnIds[name] = id;
+  }
+  if (!caseColumnIds['재귀대명사']) {
+    for (const [id, def] of Object.entries(schema)) {
+      const name = (def && def.name) ? String(def.name).trim() : '';
+      if (/재귀/.test(name)) {
+        caseColumnIds['재귀대명사'] = id;
+        break;
+      }
+    }
+  }
+  const useWideTable = Object.keys(caseColumnIds).length >= 2;
+  const categoryId = findPropIdByOrder(schema, [
+    '품사', '구', '품사·구', '품사 / 구', 'POS', 'word class', '형태',
+    '구분', '분류', '종류', '인칭', '인칭/수'
+  ]);
+  const keyId = useWideTable ? null : findPropIdByOrder(schema, ['키워드', 'keyword', 'Keyword', 'Name', '단어', '주격', '목적격', '소유격', '이름', '제목', '구분']);
+  const meaningId = findPropIdByOrder(schema, [
+    '의미', '뜻/설명', '뜻', 'meaning', 'Meaning', '설명', '한글뜻', '뜻(한글)'
+  ]);
+  const exampleId = findPropIdByOrder(schema, ['예문', 'example', 'Example']);
+  const themeId = useWideTable
+    ? null
+    : findPropIdByOrderExcluding(schema, ['격', 'case', 'Case', '테마', 'theme', 'Theme', '시제', '카테고리', '구분', '분류'], categoryId);
+  const themeLabel = useWideTable ? '격' : (themeId && schema[themeId] && schema[themeId].name ? schema[themeId].name : '테마');
+  const categoryLabel = categoryId && schema[categoryId] && schema[categoryId].name ? schema[categoryId].name : '분류';
+
+  return {
+    useWideTable,
+    caseColumnIds,
+    categoryId,
+    keyId,
+    meaningId,
+    exampleId,
+    themeId,
+    themeLabel,
+    categoryLabel
+  };
+}
+
 module.exports = async function handler(req, res) {
   if (req.method !== 'GET') {
     res.setHeader('Allow', 'GET');
@@ -95,73 +205,27 @@ module.exports = async function handler(req, res) {
     const db = await dbRes.json();
     const schema = db.properties || {};
     const setTitleFromDb = db.title && db.title[0] ? db.title[0].plain_text : '';
+    const schemaCtx = resolveSchemaContext(schema);
 
-    // 인칭대명사: 단어=앞면, 뜻=뒷면. 격=퀴즈·카드, 분류=필터. 소유대명사·재귀대명사 포함.
-    // 표가 "한 행에 주격·목적격·소유격·소유대명사·재귀대명사 컬럼"이면 격별로 펼쳐서 전부 반영.
-    const CASE_COLUMN_NAMES = ['주격', '목적격', '소유격', '소유대명사', '소유 대명사', '재귀대명사'];
-    const caseColumnIds = {};
-    for (const [id, def] of Object.entries(schema)) {
-      const name = (def && def.name) ? String(def.name).trim() : '';
-      if (CASE_COLUMN_NAMES.includes(name)) caseColumnIds[name] = id;
-    }
-    // 재귀대명사 컬럼이 정확한 이름이 아니어도 인식 (예: "재귀 대명사", "재귀대 명사" 등)
-    if (!caseColumnIds['재귀대명사']) {
-      for (const [id, def] of Object.entries(schema)) {
-        const name = (def && def.name) ? String(def.name).trim() : '';
-        if (/재귀/.test(name)) {
-          caseColumnIds['재귀대명사'] = id;
-          break;
-        }
-      }
-    }
-    /** 노션 컬럼명 "소유 대명사" → 앱에서는 "소유대명사"로 통일. 재귀 계열도 "재귀대명사"로 통일 */
-    function normalizeCaseName(name) {
-      if (name === '소유 대명사') return '소유대명사';
-      if (name && /재귀/.test(name)) return '재귀대명사';
-      return name || '';
-    }
-    const useWideTable = Object.keys(caseColumnIds).length >= 2;
-    /** 기본어휘 품사·구별: 컬럼명이 "품사" "구" 인 DB가 많음 — 반드시 category로만 매핑 */
-    const categoryId = findPropIdByOrder(schema, [
-      '품사', '구', '품사·구', '품사 / 구', 'POS', 'word class', '형태',
-      '구분', '분류', '종류', '인칭', '인칭/수'
-    ]);
-
-    const keyId = useWideTable ? null : findPropIdByOrder(schema, ['키워드', 'keyword', 'Keyword', 'Name', '단어', '주격', '목적격', '소유격', '이름', '제목', '구분']);
-    /** 뜻: 구분·분류는 품사 컬럼으로 쓰는 DB가 많아 여기 넣으면 뜻이 품사로 채워짐 → 제외 */
-    const meaningId = findPropIdByOrder(schema, [
-      '의미',
-      '뜻/설명',
-      '뜻',
-      'meaning',
-      'Meaning',
-      '설명',
-      '한글뜻',
-      '뜻(한글)'
-    ]);
-    const exampleId = findPropIdByOrder(schema, ['예문', 'example', 'Example']);
-    /** 시제·카테고리(연결사 등). 품사/분류 컬럼은 categoryId와 동일하면 제외 */
-    const themeId = useWideTable
-      ? null
-      : findPropIdByOrderExcluding(schema, ['격', 'case', 'Case', '테마', 'theme', 'Theme', '시제', '카테고리', '구분', '분류'], categoryId);
-
-    const themeLabel = useWideTable ? '격' : (themeId && schema[themeId] && schema[themeId].name ? schema[themeId].name : '테마');
-    const categoryLabel = categoryId && schema[categoryId] && schema[categoryId].name ? schema[categoryId].name : '분류';
-
-    if (!useWideTable && !keyId) {
+    if (!schemaCtx.useWideTable && !schemaCtx.keyId) {
       return res.status(400).json({
         error: 'DB에 키워드(또는 keyword) 컬럼이 없습니다.',
         hint: '노션 DB 속성 이름: 키워드, 뜻, 예문, 테마 (또는 인칭대명사표면 주격·목적격·소유격·소유대명사 컬럼)'
       });
     }
 
-    // 2) DB 쿼리 (페이지 목록)
+    const rawPageLimit = parseInt(String(req.query.page_limit || ''), 10);
+    const pageLimit = Number.isFinite(rawPageLimit) && rawPageLimit > 0 ? Math.min(rawPageLimit, 30) : 0;
+    const startCursorRaw = (req.query.start_cursor || req.query.cursor || '').trim();
+
     const body = { page_size: 100 };
-    let allPages = [];
-    let cursor = undefined;
+    if (startCursorRaw) body.start_cursor = startCursorRaw;
+
+    let chunkPages = [];
+    let nextCursor = null;
+    let notionPagesFetched = 0;
 
     do {
-      if (cursor) body.start_cursor = cursor;
       const queryRes = await fetch(`https://api.notion.com/v1/databases/${databaseId}/query`, {
         method: 'POST',
         headers,
@@ -172,59 +236,31 @@ module.exports = async function handler(req, res) {
         return res.status(queryRes.status).json({ error: 'Notion query failed', detail: err });
       }
       const data = await queryRes.json();
-      allPages = allPages.concat(data.results || []);
-      cursor = data.next_cursor || null;
-      /** 대용량 DB: 노션 rate limit·타임아웃 완화 */
-      if (cursor) await new Promise((r) => setTimeout(r, 120));
-    } while (cursor);
-
-    // 3) 앱용 words 배열. 표가 주격·목적격·소유격·소유대명사 컬럼이면 한 행을 격별로 펼침.
-    // 같은 (분류, 단어)가 여러 격이면 하나로 합쳐서 themes 배열로 (you=주격·목적격 → 둘 다 정답)
-    let words;
-    if (useWideTable) {
-      const byKey = {};
-      for (const page of allPages) {
-        const categoryVal = categoryId ? getPropPlain(page, categoryId) : '';
-        for (const [caseName, propId] of Object.entries(caseColumnIds)) {
-          const keyword = getPropPlain(page, propId);
-          if (!keyword || (keyword.trim() === '-' || keyword.trim() === '')) continue;
-          const themeVal = normalizeCaseName(caseName);
-          const key = (categoryVal || '') + '|' + keyword.trim();
-          if (!byKey[key]) {
-            byKey[key] = { keyword: keyword.trim(), meaning: themeVal, example: '', category: categoryVal || themeVal, themes: [] };
-          }
-          if (byKey[key].themes.indexOf(themeVal) === -1) byKey[key].themes.push(themeVal);
-        }
+      chunkPages = chunkPages.concat(data.results || []);
+      nextCursor = data.next_cursor || null;
+      notionPagesFetched += 1;
+      if (nextCursor) {
+        body.start_cursor = nextCursor;
+        await new Promise((r) => setTimeout(r, 120));
       }
-      words = Object.values(byKey).map((w) => {
-        w.meaning = w.themes.join(', ');
-        if (w.themes.length === 1) w.theme = w.themes[0];
-        return w;
-      });
-    } else {
-      words = allPages.map((page) => {
-        const keyword = getPropPlain(page, keyId);
-        const meaning = meaningId ? getPropPlain(page, meaningId) : '';
-        const example = exampleId ? getPropPlain(page, exampleId) : '';
-        const multi = themeId ? getPropMultiSelect(page, themeId) : [];
-        const singleTheme = themeId && !multi.length ? getPropPlain(page, themeId) : '';
-        const categoryMulti = categoryId ? getPropMultiSelect(page, categoryId) : [];
-        const categorySingle = categoryId && !categoryMulti.length ? getPropPlain(page, categoryId) : '';
+      if (pageLimit > 0 && notionPagesFetched >= pageLimit && nextCursor) {
+        break;
+      }
+    } while (nextCursor);
 
-        const word = { keyword, meaning, example };
-        if (multi.length) word.themes = multi;
-        else if (singleTheme) word.theme = singleTheme;
-        if (categoryMulti.length) word.category = categoryMulti[0];
-        else if (categorySingle) word.category = categorySingle;
-        else if (word.themes && word.themes.length) word.category = word.themes[0];
-        else if (word.theme) word.category = word.theme;
-        return word;
-      }).filter((w) => w.keyword);
-    }
-
+    const words = pagesToWords(chunkPages, schemaCtx);
     const setTitle = (req.query.set_title || '').trim() || setTitleFromDb || '노션 족보';
+    const hasMore = !!nextCursor;
 
-    return res.status(200).json({ setTitle, themeLabel, categoryLabel, words });
+    return res.status(200).json({
+      setTitle,
+      themeLabel: schemaCtx.themeLabel,
+      categoryLabel: schemaCtx.categoryLabel,
+      words,
+      hasMore,
+      nextCursor: hasMore ? nextCursor : null,
+      chunkPages: notionPagesFetched
+    });
   } catch (e) {
     console.error('notion-words api error', e);
     return res.status(500).json({ error: 'Server error', message: e.message });

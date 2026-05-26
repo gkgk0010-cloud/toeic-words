@@ -423,6 +423,193 @@
 
   var CACHE_TTL_MS = 10 * 60 * 1000; // 10분
   var LOCAL_CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7일 (첫 방문 후 다음 방문부터 바로 표시)
+  /** Notion API 한 번에 가져올 page_size=100 기준 페이지 수 — 대용량 DB 타임아웃 방지 */
+  var NOTION_CHUNK_PAGES_FIRST = 3;
+  var NOTION_CHUNK_PAGES_MORE = 4;
+
+  function getNotionApiBase() {
+    var origin = window.location.origin || '';
+    if (!origin && window.location.href) {
+      var a = document.createElement('a');
+      a.href = window.location.href;
+      origin = a.origin || (a.protocol + '//' + a.host);
+    }
+    var pathname = (window.location && window.location.pathname) || '';
+    var pathParts = pathname.split('/').filter(Boolean);
+    var basePath = pathParts.length > 1 ? '/' + pathParts.slice(0, -1).join('/') : '';
+    return { origin: origin || '', basePath: basePath };
+  }
+
+  function buildNotionWordsApiUrl(dbId, setTitleQ, opts) {
+    opts = opts || {};
+    var base = getNotionApiBase();
+    var url = (base.origin || '') + base.basePath + '/api/notion-words?database_id=' + encodeURIComponent(dbId) +
+      (setTitleQ ? '&set_title=' + encodeURIComponent(setTitleQ) : '') + '&t=' + Date.now();
+    if (opts.pageLimit) url += '&page_limit=' + encodeURIComponent(String(opts.pageLimit));
+    if (opts.startCursor) url += '&start_cursor=' + encodeURIComponent(opts.startCursor);
+    return url;
+  }
+
+  function setLoadProgressMessage(msg) {
+    var s = document.getElementById('initStatus');
+    if (!s) return;
+    s.textContent = msg;
+    s.style.display = 'block';
+    s.style.color = '#666';
+  }
+
+  function mergeWordLists(existing, incoming) {
+    if (!incoming || !incoming.length) return existing ? existing.slice() : [];
+    if (!existing || !existing.length) return incoming.slice();
+    var byKey = {};
+    function absorb(w) {
+      if (!w || !w.keyword) return;
+      var k = String(w.category || '') + '|' + String(w.keyword).trim();
+      if (!byKey[k]) {
+        byKey[k] = {
+          keyword: w.keyword,
+          meaning: w.meaning || '',
+          example: w.example || '',
+          category: w.category,
+          themes: (w.themes && w.themes.slice()) || (w.theme ? [w.theme] : [])
+        };
+        return;
+      }
+      var b = byKey[k];
+      if (w.themes && w.themes.length) {
+        w.themes.forEach(function (t) {
+          if (t && b.themes.indexOf(t) === -1) b.themes.push(t);
+        });
+      } else if (w.theme && b.themes.indexOf(w.theme) === -1) {
+        b.themes.push(w.theme);
+      }
+      if (w.meaning && !b.meaning) b.meaning = w.meaning;
+      if (w.example && !b.example) b.example = w.example;
+      if (w.category && !b.category) b.category = w.category;
+    }
+    existing.forEach(absorb);
+    incoming.forEach(absorb);
+    return Object.keys(byKey).map(function (k) {
+      var w = byKey[k];
+      if (w.themes && w.themes.length === 1) w.theme = w.themes[0];
+      if (w.themes && w.themes.length > 1) w.meaning = w.themes.join(', ');
+      return w;
+    });
+  }
+
+  function applyWordsPayloadToApp(payload, opts) {
+    opts = opts || {};
+    if (!payload) return;
+    if (payload.setTitle) setTitle = payload.setTitle;
+    if (payload.themeLabel) themeLabel = String(payload.themeLabel).trim() || themeLabel;
+    if (payload.categoryLabel) categoryLabel = String(payload.categoryLabel).trim() || categoryLabel;
+    if (payload.words) {
+      allWords = payload.words;
+      invalidateDeckKindCache();
+      applyFilter(!!opts.resetCardIndex);
+    }
+    if (document.getElementById('pageTitle')) document.getElementById('pageTitle').textContent = setTitle;
+    document.title = setTitle + ' · 똑패스';
+    if (opts.refreshUi) {
+      applyFilterUI();
+      syncQuizDimensionRow();
+      var view = (window.location.hash || '#cards').slice(1) || 'cards';
+      if (view === 'cards') renderCard();
+      else if (view === 'quiz') startQuiz();
+    }
+  }
+
+  async function fetchNotionWordsChunkOnce(dbId, setTitleQ, opts) {
+    opts = opts || {};
+    var base = getNotionApiBase();
+    var url = buildNotionWordsApiUrl(dbId, setTitleQ, {
+      pageLimit: opts.pageLimit || NOTION_CHUNK_PAGES_FIRST,
+      startCursor: opts.startCursor || ''
+    });
+    var timeoutMs = opts.timeoutMs != null ? opts.timeoutMs : 55000;
+    var res = await fetchWithTimeout(url, { cache: 'no-store', method: 'GET' }, timeoutMs);
+    if (!res.ok && base.basePath && res.status === 404) {
+      var fallbackUrl = (base.origin || '') + '/api/notion-words?database_id=' + encodeURIComponent(dbId) +
+        (setTitleQ ? '&set_title=' + encodeURIComponent(setTitleQ) : '') + '&t=' + Date.now();
+      if (opts.pageLimit) fallbackUrl += '&page_limit=' + encodeURIComponent(String(opts.pageLimit));
+      if (opts.startCursor) fallbackUrl += '&start_cursor=' + encodeURIComponent(opts.startCursor);
+      res = await fetchWithTimeout(fallbackUrl, { cache: 'no-store', method: 'GET' }, timeoutMs);
+    }
+    if (!res.ok) {
+      var err = await res.json().catch(function () { return {}; });
+      throw new Error(err.error || err.message || res.statusText);
+    }
+    return res.json();
+  }
+
+  /** 대용량 DB: 첫 청크로 바로 화면 → 나머지는 이어서 병합 */
+  async function fetchNotionWordsProgressive(dbId, setTitleQ, onPartial) {
+    var mergedWords = [];
+    var meta = { setTitle: '', themeLabel: '', categoryLabel: '' };
+    var cursor = null;
+    var hasMore = true;
+    var pass = 0;
+
+    while (hasMore) {
+      pass += 1;
+      var pageLimit = pass === 1 ? NOTION_CHUNK_PAGES_FIRST : NOTION_CHUNK_PAGES_MORE;
+      if (pass === 1) {
+        setLoadProgressMessage('불러오는 중… (먼저 일부 표시)');
+      } else {
+        setLoadProgressMessage('추가 불러오는 중… ' + mergedWords.length + '개');
+      }
+
+      var chunk = await fetchNotionWordsChunkOnce(dbId, setTitleQ, {
+        pageLimit: pageLimit,
+        startCursor: cursor || '',
+        timeoutMs: pass === 1 ? 45000 : 55000
+      });
+
+      if (chunk.setTitle) meta.setTitle = chunk.setTitle;
+      if (chunk.themeLabel) meta.themeLabel = chunk.themeLabel;
+      if (chunk.categoryLabel) meta.categoryLabel = chunk.categoryLabel;
+      mergedWords = mergeWordLists(mergedWords, chunk.words || []);
+
+      hasMore = !!chunk.hasMore && !!chunk.nextCursor;
+      cursor = chunk.nextCursor || null;
+
+      if (typeof onPartial === 'function') {
+        onPartial({
+          setTitle: meta.setTitle,
+          themeLabel: meta.themeLabel,
+          categoryLabel: meta.categoryLabel,
+          words: mergedWords,
+          hasMore: hasMore,
+          firstChunk: pass === 1
+        });
+      }
+
+      if (!hasMore) break;
+    }
+
+    return {
+      setTitle: meta.setTitle,
+      themeLabel: meta.themeLabel,
+      categoryLabel: meta.categoryLabel,
+      words: mergedWords
+    };
+  }
+
+  function refreshNotionWordsInBackground(dbId, setTitleQ, cacheKey) {
+    fetchNotionWordsProgressive(dbId, setTitleQ, function (partial) {
+      applyWordsPayloadToApp(partial, { refreshUi: true, resetCardIndex: false });
+      if (!partial.hasMore) {
+        tryCacheWordsPayload(cacheKey, {
+          setTitle: setTitle,
+          themeLabel: themeLabel,
+          categoryLabel: categoryLabel,
+          words: allWords,
+          ts: Date.now()
+        });
+        hideInitStatus();
+      }
+    }).catch(function () {});
+  }
 
   function tryCacheWordsPayload(cacheKey, obj) {
     try {
@@ -507,66 +694,16 @@
 
         if (instantData) {
           data = instantData;
-          // 백그라운드에서 같은 dbId만 API로 갱신 (내용 섞이지 않음)
-          (function (id) {
-            var origin = window.location.origin || '';
-            if (!origin && window.location.href) {
-              var a = document.createElement('a');
-              a.href = window.location.href;
-              origin = a.origin || (a.protocol + '//' + a.host);
-            }
-            var pathname = (window.location && window.location.pathname) || '';
-            var pathParts = pathname.split('/').filter(Boolean);
-            var basePath = pathParts.length > 1 ? '/' + pathParts.slice(0, -1).join('/') : '';
-            var apiUrl = (origin || '') + basePath + '/api/notion-words?database_id=' + encodeURIComponent(id) +
-              (setTitleQ ? '&set_title=' + encodeURIComponent(setTitleQ) : '') + '&t=' + Date.now();
-            fetchWithTimeout(apiUrl, { cache: 'no-store', method: 'GET' }, 55000).then(function (res) {
-              if (!res.ok && basePath && res.status === 404) {
-                return fetchWithTimeout((origin || '') + '/api/notion-words?database_id=' + encodeURIComponent(id) +
-                  (setTitleQ ? '&set_title=' + encodeURIComponent(setTitleQ) : '') + '&t=' + Date.now(), { cache: 'no-store', method: 'GET' }, 55000);
-              }
-              return res;
-            }).then(function (res) { return res.ok ? res.json() : null; }).then(function (apiData) {
-              if (apiData && apiData.words && apiData.words.length > 0) {
-                setTitle = apiData.setTitle || setTitle;
-                themeLabel = (apiData.themeLabel && apiData.themeLabel.trim()) || themeLabel;
-                categoryLabel = (apiData.categoryLabel && apiData.categoryLabel.trim()) || categoryLabel;
-                allWords = apiData.words || [];
-                invalidateDeckKindCache();
-                applyFilter();
-                if (document.getElementById('pageTitle')) document.getElementById('pageTitle').textContent = setTitle;
-                document.title = setTitle + ' · 똑패스';
-                applyFilterUI();
-                syncQuizDimensionRow();
-                var view = (window.location.hash || '#cards').slice(1) || 'cards';
-                if (view === 'cards') renderCard();
-                tryCacheWordsPayload('words_cache_v3_' + id, { setTitle: setTitle, themeLabel: themeLabel, categoryLabel: categoryLabel, words: allWords, ts: Date.now() });
-              }
-            }).catch(function () {});
-          })(dbId);
+          refreshNotionWordsInBackground(dbId, setTitleQ, cacheKey);
         } else {
-          if (document.getElementById('pageTitle')) document.getElementById('pageTitle').textContent = '로드 중…';
-          var origin = window.location.origin || '';
-          if (!origin && window.location.href) {
-            var a = document.createElement('a');
-            a.href = window.location.href;
-            origin = a.origin || (a.protocol + '//' + a.host);
-          }
-          var pathname = (window.location && window.location.pathname) || '';
-          var pathParts = pathname.split('/').filter(Boolean);
-          var basePath = pathParts.length > 1 ? '/' + pathParts.slice(0, -1).join('/') : '';
-          var apiUrl = (origin || '') + basePath + '/api/notion-words?database_id=' + encodeURIComponent(dbId) +
-            (setTitleQ ? '&set_title=' + encodeURIComponent(setTitleQ) : '') + '&t=' + Date.now();
-          var res = await fetchWithTimeout(apiUrl, { cache: 'no-store', method: 'GET' }, 55000);
-          if (!res.ok && basePath && res.status === 404) {
-            res = await fetchWithTimeout((origin || '') + '/api/notion-words?database_id=' + encodeURIComponent(dbId) +
-              (setTitleQ ? '&set_title=' + encodeURIComponent(setTitleQ) : '') + '&t=' + Date.now(), { cache: 'no-store', method: 'GET' }, 55000);
-          }
-          if (!res.ok) {
-            var err = await res.json().catch(function () { return {}; });
-            throw new Error(err.error || err.message || res.statusText);
-          }
-          data = await res.json();
+          setLoadProgressMessage('불러오는 중…');
+          data = await fetchNotionWordsProgressive(dbId, setTitleQ, function (partial) {
+            applyWordsPayloadToApp(partial, {
+              refreshUi: partial.firstChunk,
+              resetCardIndex: partial.firstChunk
+            });
+            if (!partial.hasMore) hideInitStatus();
+          });
           tryCacheWordsPayload(cacheKey, {
             setTitle: data.setTitle || '',
             themeLabel: (data.themeLabel && data.themeLabel.trim()) || '',
