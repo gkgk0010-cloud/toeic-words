@@ -75,8 +75,43 @@
       </div>
     </section>
 
-    <!-- 퀴즈 뷰 (시제 맞추기만) -->
+    <!-- 퀴즈 뷰 -->
     <section id="view-quiz" class="view view-quiz hidden">
+      <div id="quiz-session-setup" class="quiz-session-setup">
+        <h2 class="quiz-setup-title">학습 시작</h2>
+        <p class="quiz-setup-desc">풀 문항 수를 선택한 뒤 시작하세요. 10문항씩 청크로 진행하며, 틀린 문제는 다 맞출 때까지 다시 나옵니다.</p>
+        <div id="quizCumulativeWrongCard" class="quiz-cumulative-wrong-card hidden">
+          <span class="quiz-cumulative-wrong-text" id="quizCumulativeWrongLine">📋 누적 오답: 0개</span>
+          <button type="button" class="btn-quiz-manage-wrong" id="quizManageWrongBtn">관리하기</button>
+        </div>
+        <p class="quiz-setup-pool" id="quizSetupPoolLine">—</p>
+        <div class="quiz-count-grid" id="quizCountGrid" role="group" aria-label="문항 수"></div>
+        <button type="button" class="btn btn-quiz-start" id="quizSessionStart">학습 시작</button>
+      </div>
+
+      <div id="quiz-wrong-manage" class="quiz-wrong-manage hidden">
+        <button type="button" class="btn-quiz-back-setup" id="quizWrongManageBack">← 학습 시작으로</button>
+        <h2 class="quiz-setup-title" id="quizWrongManageTitle">누적 오답</h2>
+        <div class="quiz-wrong-toolbar">
+          <label class="quiz-wrong-select-all"><input type="checkbox" id="quizWrongSelectAll"> 전체 선택</label>
+          <button type="button" class="btn-quiz-wrong-tool" id="quizWrongDismissSelected">선택 삭제</button>
+          <button type="button" class="btn-quiz-wrong-tool primary" id="quizWrongRetrySelected">선택 다시 풀기</button>
+        </div>
+        <ul class="quiz-wrong-list" id="quizWrongList"></ul>
+        <button type="button" class="btn btn-quiz-start" id="quizWrongRetryAll">모두 다시 풀기</button>
+      </div>
+
+      <div id="quiz-session-complete" class="quiz-session-complete hidden">
+        <h2 class="quiz-setup-title">세션 완료</h2>
+        <p id="quizCompleteSummary" class="quiz-complete-summary">—</p>
+        <div class="quiz-complete-actions">
+          <button type="button" class="btn btn-quiz-retry-wrong hidden" id="quizSessionRetryWrong">이번 세션 틀린 N개 다시 풀기</button>
+          <button type="button" class="btn btn-quiz-finish" id="quizSessionFinish">끝내기</button>
+        </div>
+      </div>
+
+      <div id="quiz-session-play" class="quiz-session-play hidden">
+      <p class="quiz-chunk-banner hidden" id="quizChunkRetryBanner" role="status"></p>
       <p class="quiz-progress-line" id="quizProgressLine" style="margin-bottom:12px; font-size:15px; font-weight:600; color:#4b5563;">0 / 0 문제</p>
       <div id="quiz-dimension-row" class="quiz-dimension-row hidden" role="group" aria-label="출제 방식">
         <span class="quiz-dimension-label">매칭</span>
@@ -93,14 +128,26 @@
       <div class="quiz-feedback hidden" id="quizFeedback"></div>
       <div class="quiz-nav">
         <span class="quiz-score" id="quizScore">0 / 0</span>
-        <button type="button" class="btn btn-next-quiz" id="quizNext">다음</button>
+        <button type="button" class="btn btn-next-quiz hidden" id="quizNext" aria-hidden="true" tabindex="-1">다음</button>
       </div>
       <p id="jogboAppScoreLine" class="jogbo-app-score-line hidden" aria-live="polite"></p>
+      </div>
     </section>
   </main>
 
+  <div id="quiz-answer-modal" class="quiz-answer-modal hidden" role="dialog" aria-modal="true" aria-labelledby="quizModalVerdict">
+    <div class="quiz-answer-modal-backdrop" aria-hidden="true"></div>
+    <div class="quiz-answer-modal-sheet">
+      <p id="quizModalVerdict" class="quiz-modal-verdict"></p>
+      <p id="quizModalKeyword" class="quiz-modal-keyword"></p>
+      <p id="quizModalMeaning" class="quiz-modal-meaning"></p>
+      <p id="quizModalExtra" class="quiz-modal-extra"></p>
+      <button type="button" id="quizModalNext" class="btn btn-quiz-start quiz-modal-next">다음</button>
+    </div>
+  </div>
+
   <script src="config.js?v=6" defer></script>
-  <script src="app.js?v=32" defer onerror="(function(){var e=document.getElementById('loadError'),i=document.getElementById('initStatus');if(e){e.style.display='block';e.innerHTML='app.js를 불러오지 못했습니다. 비행기모드·차단 해제 후 <strong>캐시 삭제</strong>하고 새로고침하세요.';}if(i){i.style.display='none';}})()"></script>
+  <script src="app.js?v=39" defer onerror="(function(){var e=document.getElementById('loadError'),i=document.getElementById('initStatus');if(e){e.style.display='block';e.innerHTML='app.js를 불러오지 못했습니다. 비행기모드·차단 해제 후 <strong>캐시 삭제</strong>하고 새로고침하세요.';}if(i){i.style.display='none';}})()"></script>
   <script>
     /** 여전히 "로딩 중"(인라인 스크립트까지 실행 안 됨)일 때만 — 대부분 HTML 캐시 꼬임 */
     setTimeout(function() {

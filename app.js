@@ -31,7 +31,7 @@
     _dbIdFromUrl = String(window.FORCE_DB_ID).trim().replace(/-/g, '');
   } else {
     try {
-      var _href = typeof window !== 'undefined' && window.location && window.location.href ? window.location.href : '';
+    var _href = typeof window !== 'undefined' && window.location && window.location.href ? window.location.href : '';
       var _dbRaw = parseQueryKey(_href, 'db') || parseQueryKey(_href, 'database_id');
       _dbIdFromUrl = _dbRaw ? String(_dbRaw).trim().replace(/-/g, '') : '';
     } catch (e) {
@@ -100,6 +100,32 @@
   /** 빈칸+명사 분사: 예문 빈칸 + ing/ed 형태 2지선다 */
   let quizGradeByParticipleBlank = false;
 
+  /** Recall 패턴 청크 세션 (CHUNK_SIZE=10) */
+  var CHUNK_SIZE = 10;
+  var sessionId = null;
+  var sessionCompletionSaved = false;
+  var sessionActive = false;
+  var sessionQuestionLimit = null;
+  var defaultQuestionLimit = null;
+  var selectedQuestionCount = '20';
+  var fullDeck = [];
+  var chunkIndex = 0;
+  var activeDeck = [];
+  var activeIdx = 0;
+  var chunkRetryRound = false;
+  var retryBannerCount = 0;
+  var roundWrongById = {};
+  var sessionWrongIds = {};
+  var attemptByQuestionId = {};
+  /** 세션 통계용: question_id → 첫 시도(비재출제 라운드) 정답 여부 */
+  var firstAttemptByQuestionId = {};
+  var staticDeckKey = '';
+  var queuePolicy = 'shuffle';
+  var completingSessionWrongIds = {};
+  var cumulativeWrongRows = [];
+  var wrongManageSelectedIds = {};
+  var quizModalEnterHandler = null;
+
   /** 퀴즈 탭에서 품사/뜻 라디오 바꿀 때, 채점 전이면 같은 문항을 새 모드로 즉시 갱신 */
   function bindQuizDimensionLiveRefresh() {
     var row = document.getElementById('quiz-dimension-row');
@@ -112,9 +138,10 @@
         if (!vq || vq.classList.contains('hidden')) return;
       } catch (e1) {}
       if (!isPrepConjAdvStyleDeck()) return;
-      if (!quizWordOrder.length || quizIndex < 0 || quizIndex >= quizWordOrder.length) return;
+      if (!sessionActive || !activeDeck.length) return;
+      if (activeIdx < 0 || activeIdx >= activeDeck.length) return;
       if (quizAnswered) return;
-      nextQuiz();
+      presentQuestion();
     });
   }
 
@@ -410,7 +437,7 @@
     if (name === 'cards') renderCard();
     if (name === 'quiz') {
       syncQuizDimensionRow();
-      startQuiz();
+      resetSessionUiForSetup();
     }
   }
 
@@ -471,7 +498,9 @@
           meaning: w.meaning || '',
           example: w.example || '',
           category: w.category,
-          themes: (w.themes && w.themes.slice()) || (w.theme ? [w.theme] : [])
+          themes: (w.themes && w.themes.slice()) || (w.theme ? [w.theme] : []),
+          question_id: w.question_id || '',
+          notion_page_id: w.notion_page_id || ''
         };
         return;
       }
@@ -504,7 +533,7 @@
     if (payload.themeLabel) themeLabel = String(payload.themeLabel).trim() || themeLabel;
     if (payload.categoryLabel) categoryLabel = String(payload.categoryLabel).trim() || categoryLabel;
     if (payload.words) {
-      allWords = payload.words;
+      allWords = ensureQuestionIds(payload.words, staticDeckKey || _dbIdFromUrl || 'deck');
       invalidateDeckKindCache();
       applyFilter(!!opts.resetCardIndex);
     }
@@ -515,7 +544,7 @@
       syncQuizDimensionRow();
       var view = (window.location.hash || '#cards').slice(1) || 'cards';
       if (view === 'cards') renderCard();
-      else if (view === 'quiz') startQuiz();
+      else if (view === 'quiz') resetSessionUiForSetup();
     }
   }
 
@@ -651,6 +680,7 @@
       }
 
       if (dbId) {
+        staticDeckKey = dbId;
         var cacheKey = 'words_cache_v3_' + dbId;
         var instantData = null;
 
@@ -670,6 +700,7 @@
 
         // 2) 캐시 없으면 정적 JSON (연결사·인칭대명사 첫 방문에도 바로 표시)
         if (!instantData && (dbId === CONNECTOR_DB_ID || isConnectorPage)) {
+          staticDeckKey = 'connector';
           try {
             var connRes = await fetchWithTimeout('data/connector-words.json?t=' + Date.now(), { cache: 'no-store' }, 45000);
             if (connRes.ok) {
@@ -681,6 +712,7 @@
           } catch (e) {}
         }
         if (!instantData && dbId === PRONOUN_DB_ID) {
+          staticDeckKey = 'pronoun';
           try {
             var pronRes = await fetchWithTimeout('data/pronoun-words.json?t=' + Date.now(), { cache: 'no-store' }, 45000);
             if (pronRes.ok) {
@@ -705,14 +737,15 @@
             if (!partial.hasMore) hideInitStatus();
           });
           tryCacheWordsPayload(cacheKey, {
-            setTitle: data.setTitle || '',
-            themeLabel: (data.themeLabel && data.themeLabel.trim()) || '',
-            categoryLabel: (data.categoryLabel && data.categoryLabel.trim()) || '',
-            words: data.words || [],
-            ts: Date.now()
-          });
+              setTitle: data.setTitle || '',
+              themeLabel: (data.themeLabel && data.themeLabel.trim()) || '',
+              categoryLabel: (data.categoryLabel && data.categoryLabel.trim()) || '',
+              words: data.words || [],
+              ts: Date.now()
+            });
         }
       } else {
+        staticDeckKey = 'words.json';
         // 없으면 기존 words.json
         const res = await fetchWithTimeout('data/words.json?t=' + Date.now(), { cache: 'no-store' }, 45000);
         data = await res.json();
@@ -722,6 +755,7 @@
       themeLabel = (data.themeLabel && data.themeLabel.trim()) || (isConnectorPage ? '카테고리' : '시제');
       categoryLabel = (data.categoryLabel && data.categoryLabel.trim()) || '';
       allWords = data.words || [];
+      allWords = ensureQuestionIds(allWords, staticDeckKey || dbId || 'deck');
       invalidateDeckKindCache();
       applyFilter();
       document.getElementById('pageTitle').textContent = setTitle;
@@ -934,7 +968,7 @@
       return word.themes.map(function (t) { return String(t).trim(); }).filter(Boolean);
     }
     if (word.theme != null && String(word.theme).trim() !== '') {
-      return [String(word.theme).trim()];
+      return String(word.theme).trim().split(/[,，/·]/).map(function (t) { return t.trim(); }).filter(Boolean);
     }
     return [];
   }
@@ -1206,10 +1240,80 @@
     return shuffle(choices.slice(0, count));
   }
 
-  function startQuiz() {
-    /** 퀴즈는 항상 전체 단어 기준(카드에서 품사 필터를 걸어도 동일 문항·동일 선택지 풀) */
+  function staticQuestionId(deckKey, word) {
+    var dk = String(deckKey || 'deck').trim();
+    var kw = word && word.keyword != null ? String(word.keyword).trim() : '';
+    var cat = word && word.category != null ? String(word.category).trim() : '';
+    var th = word && word.theme != null ? String(word.theme).trim() : '';
+    if (word && word.themes && word.themes.length) th = String(word.themes[0]).trim();
+    return 'static:' + dk + ':' + kw + ':' + cat + ':' + th;
+  }
+
+  function ensureQuestionIds(words, deckKey) {
+    if (!words || !words.length) return [];
+    return words.map(function (w) {
+      if (!w) return w;
+      if (w.question_id && String(w.question_id).trim()) return w;
+      var copy = Object.assign({}, w);
+      copy.question_id = staticQuestionId(deckKey, w);
+      return copy;
+    });
+  }
+
+  function newSessionId() {
+    try {
+      if (typeof crypto !== 'undefined' && crypto.randomUUID) return crypto.randomUUID();
+    } catch (e) {}
+    return 'sess-' + Date.now() + '-' + Math.random().toString(36).slice(2, 11);
+  }
+
+  function wordKeyForSession(word) {
+    if (!word) return '';
+    if (word.question_id && String(word.question_id).trim()) return String(word.question_id).trim();
+    return staticQuestionId(staticDeckKey || getCurrentDbIdFromUrl() || 'deck', word);
+  }
+
+  function getDeckKindName() {
+    if (themeLabel === '격') return 'case';
+    if (isPrepConjAdvStyleDeck()) return 'prepConjAdv';
+    if (isBinaryPairingDeck()) return 'pairing';
+    if (isParticipleBlankDeck()) return 'participle';
+    if (isCategoryDrivenDeck()) return 'category';
+    return 'theme';
+  }
+
+  function buildMlFeatures(attemptInChunk) {
+    return {
+      app: 'jogbo',
+      db_id: getCurrentDbIdFromUrl() || staticDeckKey || '',
+      deck_kind: getDeckKindName(),
+      chunk_index: chunkIndex,
+      chunk_size: CHUNK_SIZE,
+      attempt_in_chunk: attemptInChunk,
+      is_chunk_retry_round: !!chunkRetryRound,
+      quiz_dimension: isPrepConjAdvStyleDeck() ? getQuizDimension() : 'theme',
+      session_question_limit: sessionQuestionLimit == null ? 'all' : sessionQuestionLimit,
+      queue_policy: queuePolicy || 'shuffle'
+    };
+  }
+
+  function bumpAttempt(questionId) {
+    var qid = questionId || '';
+    var n = (attemptByQuestionId[qid] || 0) + 1;
+    attemptByQuestionId[qid] = n;
+    return n;
+  }
+
+  function chunkBoundsLabel() {
+    var total = fullDeck.length;
+    if (total <= 0) return '';
+    var startAbs = chunkIndex * CHUNK_SIZE + 1;
+    var chunkEnd = Math.min((chunkIndex + 1) * CHUNK_SIZE, total);
+    return startAbs + '-' + chunkEnd + ' / ' + total;
+  }
+
+  function getEligibleQuizPool() {
     var list = allWords.slice();
-    /** 2지선다 족보: 짝(category/theme) 없는 행 제외 */
     if (themeLabel !== '격' && isBinaryPairingDeck()) {
       var withPair = list.filter(function (w) { return getWordQuizAnswer(w); });
       if (withPair.length >= 1) list = withPair;
@@ -1217,35 +1321,708 @@
       var pbList = list.filter(canParticipleBlankQuiz);
       if (pbList.length >= 1) list = pbList;
     } else if (themeLabel !== '격' && isCategoryDrivenDeck()) {
-      /** 품사·구별 덱: category 없는 행은 퀴즈에서 제외 */
       var withCat = list.filter(function (w) { return w.category && String(w.category).trim(); });
       if (withCat.length >= 1) list = withCat;
     }
-    quizWordOrder = shuffle(list);
-    quizIndex = 0;
-    quizScore = { correct: 0, total: 0 };
-    nextQuiz();
+    return list;
   }
 
-  function nextQuiz() {
+  function resolveSessionLimit(raw, poolLen) {
+    if (raw === 'all' || raw == null || raw === '') return poolLen;
+    var n = parseInt(String(raw), 10);
+    if (!Number.isFinite(n) || n <= 0) return poolLen;
+    return Math.min(n, poolLen);
+  }
+
+  function getStudentContext() {
+    var href = (window.location && window.location.href) ? window.location.href : '';
+    return {
+      id: (parseQueryKey(href, 'student_id') || parseQueryKey(href, 'user') || '').trim(),
+      name: (parseQueryKey(href, 'student_name') || parseQueryKey(href, 'name') || '').trim()
+    };
+  }
+
+  async function fetchJogboQuestionHistory(studentId, tag, questionIds) {
+    var cfg = window.APP_CONFIG;
+    if (!cfg || !cfg.SUPABASE_URL || !cfg.SUPABASE_ANON_KEY) return {};
+    if (!studentId || !questionIds || !questionIds.length) return {};
+    try {
+      var res = await fetch(cfg.SUPABASE_URL + '/rest/v1/rpc/get_jogbo_question_history', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'apikey': cfg.SUPABASE_ANON_KEY,
+          'Authorization': 'Bearer ' + cfg.SUPABASE_ANON_KEY
+        },
+        body: JSON.stringify({
+          p_student_id: String(studentId),
+          p_tag: String(tag || ''),
+          p_question_ids: questionIds
+        })
+      });
+      if (!res.ok) {
+        var errText = await res.text().catch(function () { return ''; });
+        console.warn('get_jogbo_question_history failed:', res.status, errText);
+        return {};
+      }
+      var rows = await res.json();
+      var map = {};
+      if (Array.isArray(rows)) {
+        rows.forEach(function (r) {
+          if (r && r.question_id) map[String(r.question_id)] = r.last_answered_at || '';
+        });
+      }
+      return map;
+    } catch (e) {
+      console.warn('get_jogbo_question_history failed:', e);
+      return {};
+    }
+  }
+
+  async function buildOrderedDeckFromPool(pool, limit) {
+    var student = getStudentContext();
+    var tag = getTag();
+    var qids = pool.map(function (w) { return wordKeyForSession(w); }).filter(Boolean);
+    if (!student.id || !qids.length) {
+      queuePolicy = 'shuffle';
+      return shuffle(pool).slice(0, limit);
+    }
+    var historyMap = await fetchJogboQuestionHistory(student.id, tag, qids);
+    var unseen = [];
+    var seen = [];
+    pool.forEach(function (w) {
+      var qid = wordKeyForSession(w);
+      var lastAt = historyMap[qid];
+      if (lastAt === undefined || lastAt === null || lastAt === '') {
+        unseen.push(w);
+      } else {
+        seen.push({ word: w, lastAt: String(lastAt) });
+      }
+    });
+    unseen = shuffle(unseen);
+    seen.sort(function (a, b) {
+      if (a.lastAt < b.lastAt) return -1;
+      if (a.lastAt > b.lastAt) return 1;
+      return 0;
+    });
+    var ordered = unseen.concat(seen.map(function (x) { return x.word; }));
+    queuePolicy = unseen.length > 0 ? 'unseen_first' : 'review_oldest';
+    return ordered.slice(0, limit);
+  }
+
+  function getFirstAttemptSessionStats() {
+    var keys = Object.keys(firstAttemptByQuestionId);
+    var correctCount = 0;
+    keys.forEach(function (k) {
+      if (firstAttemptByQuestionId[k]) correctCount++;
+    });
+    return {
+      question_count: keys.length || fullDeck.length,
+      correct_count: correctCount
+    };
+  }
+
+  function recordSessionCompletion(isFullComplete) {
+    var cfg = window.APP_CONFIG;
+    if (!cfg || !cfg.SUPABASE_URL || !cfg.SUPABASE_ANON_KEY) return;
+    var student = getStudentContext();
+    if (!student.id || !sessionId) return;
+    var stats = getFirstAttemptSessionStats();
+    if (stats.question_count <= 0) return;
+    var row = {
+      user_id: String(student.id),
+      tag: getTag(),
+      session_id: sessionId,
+      question_count: stats.question_count,
+      correct_count: stats.correct_count,
+      is_full_complete: isFullComplete !== false,
+      created_at_kst: nowKstString()
+    };
+    fetch(cfg.SUPABASE_URL + '/rest/v1/jogbo_session_completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'apikey': cfg.SUPABASE_ANON_KEY,
+        'Authorization': 'Bearer ' + cfg.SUPABASE_ANON_KEY,
+        'Prefer': 'return=minimal'
+      },
+      body: JSON.stringify(row)
+    }).then(function (res) {
+      if (!res.ok) {
+        return res.text().then(function (t) {
+          console.warn('jogbo_session_completions insert failed:', res.status, t);
+        });
+      }
+    }).catch(function (e) {
+      console.warn('jogbo_session_completions insert failed:', e);
+    });
+  }
+
+  function escapeHtml(str) {
+    return String(str == null ? '' : str)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
+  }
+
+  function setQuizSubview(id) {
+    ['quiz-session-setup', 'quiz-session-complete', 'quiz-session-play', 'quiz-wrong-manage'].forEach(function (sid) {
+      var el = document.getElementById(sid);
+      if (el) el.classList.add('hidden');
+    });
+    if (id) {
+      var show = document.getElementById(id);
+      if (show) show.classList.remove('hidden');
+    }
+  }
+
+  function getWordByQuestionIdMap() {
+    var map = {};
+    getEligibleQuizPool().forEach(function (w) {
+      var k = wordKeyForSession(w);
+      if (k) map[k] = w;
+    });
+    return map;
+  }
+
+  async function fetchJogboWrongQuestions(studentId, tag) {
+    var cfg = window.APP_CONFIG;
+    if (!cfg || !cfg.SUPABASE_URL || !cfg.SUPABASE_ANON_KEY) return [];
+    if (!studentId) return [];
+    try {
+      var res = await fetch(cfg.SUPABASE_URL + '/rest/v1/rpc/get_jogbo_wrong_questions', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'apikey': cfg.SUPABASE_ANON_KEY,
+          'Authorization': 'Bearer ' + cfg.SUPABASE_ANON_KEY
+        },
+        body: JSON.stringify({
+          p_student_id: String(studentId),
+          p_tag: String(tag || '')
+        })
+      });
+      if (!res.ok) {
+        console.warn('get_jogbo_wrong_questions failed:', res.status, await res.text().catch(function () { return ''; }));
+        return [];
+      }
+      var rows = await res.json();
+      if (!Array.isArray(rows)) return [];
+      return rows.filter(function (r) { return r && r.question_id; });
+    } catch (e) {
+      console.warn('get_jogbo_wrong_questions failed:', e);
+      return [];
+    }
+  }
+
+  async function refreshCumulativeWrongUi() {
+    var card = document.getElementById('quizCumulativeWrongCard');
+    var line = document.getElementById('quizCumulativeWrongLine');
+    var student = getStudentContext();
+    if (!card || !line) return;
+    if (!student.id) {
+      cumulativeWrongRows = [];
+      card.classList.add('hidden');
+      return;
+    }
+    var rows = await fetchJogboWrongQuestions(student.id, getTag());
+    var wordMap = getWordByQuestionIdMap();
+    cumulativeWrongRows = rows.filter(function (r) { return wordMap[r.question_id]; });
+    if (cumulativeWrongRows.length <= 0) {
+      card.classList.add('hidden');
+      return;
+    }
+    line.textContent = '📋 누적 오답: ' + cumulativeWrongRows.length + '개';
+    card.classList.remove('hidden');
+  }
+
+  async function dismissWrongQuestions(questionIds) {
+    var cfg = window.APP_CONFIG;
+    var student = getStudentContext();
+    if (!cfg || !student.id || !questionIds || !questionIds.length) return false;
+    var tag = getTag();
+    var rows = questionIds.map(function (qid) {
+      return { user_id: String(student.id), tag: tag, question_id: String(qid) };
+    });
+    try {
+      var res = await fetch(cfg.SUPABASE_URL + '/rest/v1/jogbo_wrong_dismissed', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'apikey': cfg.SUPABASE_ANON_KEY,
+          'Authorization': 'Bearer ' + cfg.SUPABASE_ANON_KEY,
+          'Prefer': 'return=minimal,resolution=ignore-duplicates'
+        },
+        body: JSON.stringify(rows)
+      });
+      if (!res.ok) {
+        console.warn('jogbo_wrong_dismissed insert failed:', res.status, await res.text().catch(function () { return ''; }));
+        return false;
+      }
+      return true;
+    } catch (e) {
+      console.warn('jogbo_wrong_dismissed insert failed:', e);
+      return false;
+    }
+  }
+
+  function updateWrongManageTitle() {
+    var title = document.getElementById('quizWrongManageTitle');
+    if (title) title.textContent = getTag() + ' - 누적 오답 ' + cumulativeWrongRows.length + '개';
+  }
+
+  function renderWrongManageList() {
+    var list = document.getElementById('quizWrongList');
+    if (!list) return;
+    var wordMap = getWordByQuestionIdMap();
+    if (!cumulativeWrongRows.length) {
+      list.innerHTML = '<li style="justify-content:center;color:#6b7280;padding:16px;">누적 오답이 없습니다.</li>';
+      return;
+    }
+    list.innerHTML = cumulativeWrongRows.map(function (row) {
+      var w = wordMap[row.question_id];
+      var kw = w && w.keyword ? String(w.keyword).trim() : row.question_id;
+      var mean = w && w.meaning ? String(w.meaning).trim() : '';
+      var qidEsc = escapeHtml(row.question_id);
+      var checked = wrongManageSelectedIds[row.question_id] ? ' checked' : '';
+      return '<li><input type="checkbox" class="quiz-wrong-check" data-qid="' + qidEsc + '"' + checked + '>' +
+        '<div><span class="wrong-kw">' + escapeHtml(kw) + '</span>' +
+        (mean ? '<br><span class="wrong-mean">' + escapeHtml(mean) + '</span>' : '') +
+        '</div></li>';
+    }).join('');
+    var selectAll = document.getElementById('quizWrongSelectAll');
+    if (selectAll) {
+      selectAll.checked = cumulativeWrongRows.length > 0 &&
+        cumulativeWrongRows.every(function (r) { return wrongManageSelectedIds[r.question_id]; });
+    }
+    var retryAll = document.getElementById('quizWrongRetryAll');
+    if (retryAll) retryAll.textContent = '모두 다시 풀기 (' + cumulativeWrongRows.length + '개)';
+  }
+
+  async function showWrongManageScreen() {
+    var student = getStudentContext();
+    if (!student.id) {
+      alert('로그인 후 이용할 수 있습니다.');
+      return;
+    }
+    setQuizSubview('quiz-wrong-manage');
+    cumulativeWrongRows = await fetchJogboWrongQuestions(student.id, getTag());
+    var wordMap = getWordByQuestionIdMap();
+    cumulativeWrongRows = cumulativeWrongRows.filter(function (r) { return wordMap[r.question_id]; });
+    wrongManageSelectedIds = {};
+    updateWrongManageTitle();
+    renderWrongManageList();
+  }
+
+  function getWrongManageSelectedIds() {
+    return Object.keys(wrongManageSelectedIds).filter(function (k) { return wrongManageSelectedIds[k]; });
+  }
+
+  async function beginCumulativeWrongSession(questionIds, policy) {
+    if (!questionIds || !questionIds.length) return;
+    var wordMap = getWordByQuestionIdMap();
+    var words = [];
+    questionIds.forEach(function (id) {
+      if (wordMap[id]) words.push(wordMap[id]);
+    });
+    if (!words.length) {
+      alert('선택한 오답을 덱에서 찾을 수 없습니다.');
+      return;
+    }
+    await beginSession({
+      pool: words,
+      limit: words.length,
+      queuePolicy: policy
+    });
+  }
+
+  function closeQuizAnswerModal() {
+    var modal = document.getElementById('quiz-answer-modal');
+    if (modal) modal.classList.add('hidden');
+    if (quizModalEnterHandler) {
+      document.removeEventListener('keydown', quizModalEnterHandler);
+      quizModalEnterHandler = null;
+    }
+  }
+
+  function showQuizAnswerModal(correct, detail) {
+    var modal = document.getElementById('quiz-answer-modal');
+    var verdict = document.getElementById('quizModalVerdict');
+    var keyword = document.getElementById('quizModalKeyword');
+    var meaning = document.getElementById('quizModalMeaning');
+    var extra = document.getElementById('quizModalExtra');
+    var nextBtn = document.getElementById('quizModalNext');
+    if (!modal || !verdict) return;
+    detail = detail || {};
+    verdict.textContent = correct ? '✅ 정답! +5점' : '❌ 오답';
+    verdict.className = 'quiz-modal-verdict ' + (correct ? 'correct' : 'wrong');
+    if (keyword) keyword.textContent = detail.keyword || '—';
+    if (meaning) {
+      meaning.textContent = detail.meaning || '';
+      meaning.style.display = detail.meaning ? '' : 'none';
+    }
+    if (extra) {
+      extra.textContent = detail.extra || '';
+      extra.style.display = detail.extra ? '' : 'none';
+    }
+    modal.classList.remove('hidden');
+    if (quizModalEnterHandler) document.removeEventListener('keydown', quizModalEnterHandler);
+    quizModalEnterHandler = function (ev) {
+      if (ev.key === 'Enter' && modal && !modal.classList.contains('hidden')) {
+        ev.preventDefault();
+        advanceToNextQuestion();
+      }
+    };
+    document.addEventListener('keydown', quizModalEnterHandler);
+    if (nextBtn) {
+      window.setTimeout(function () {
+        try { nextBtn.focus(); } catch (e) {}
+      }, 0);
+    }
+  }
+
+  function advanceToNextQuestion() {
+    closeQuizAnswerModal();
+    if (!quizAnswered || !sessionActive) return;
+    activeIdx++;
+    if (activeIdx >= activeDeck.length) {
+      advanceAfterRoundComplete();
+      return;
+    }
+    presentQuestion();
+  }
+
+  function getQuestionCountOptions(poolLen) {
+    var n = Math.max(0, parseInt(String(poolLen), 10) || 0);
+    if (n <= 0) return [];
+    var allLabel = '전체(' + n + '개)';
+    if (n < 20) return [{ count: 'all', label: allLabel }];
+    if (n < 50) {
+      return [
+        { count: '20', label: '20문제' },
+        { count: 'all', label: allLabel }
+      ];
+    }
+    if (n < 100) {
+      return [
+        { count: '20', label: '20문제' },
+        { count: '50', label: '50문제' },
+        { count: 'all', label: allLabel }
+      ];
+    }
+    return [
+      { count: '20', label: '20문제' },
+      { count: '50', label: '50문제' },
+      { count: '100', label: '100문제' },
+      { count: 'all', label: allLabel }
+    ];
+  }
+
+  function normalizeQuestionCountForPool(poolLen, pick) {
+    var opts = getQuestionCountOptions(poolLen);
+    if (!opts.length) return 'all';
+    var allowed = opts.map(function (o) { return o.count; });
+    var raw = String(pick != null ? pick : '20');
+    if (allowed.indexOf(raw) >= 0) return raw;
+    if (defaultQuestionLimit != null && !window.__jogboCountUserPicked) {
+      var def = String(defaultQuestionLimit);
+      if (allowed.indexOf(def) >= 0) return def;
+      var numeric = parseInt(def, 10);
+      if (!isNaN(numeric)) {
+        var best = null;
+        allowed.forEach(function (c) {
+          if (c === 'all') return;
+          var cn = parseInt(c, 10);
+          if (cn <= poolLen && cn <= numeric && (best == null || cn > best)) best = cn;
+        });
+        if (best != null) return String(best);
+      }
+    }
+    if (allowed.indexOf('20') >= 0) return '20';
+    return 'all';
+  }
+
+  function renderQuestionCountOptions(poolLen) {
+    var grid = document.getElementById('quizCountGrid');
+    if (!grid) return;
+    var opts = getQuestionCountOptions(poolLen);
+    grid.innerHTML = opts.map(function (o) {
+      var c = String(o.count).replace(/"/g, '&quot;');
+      return '<button type="button" class="quiz-count-btn" data-count="' + c + '">' + o.label + '</button>';
+    }).join('');
+    grid.classList.toggle('quiz-count-grid--single', opts.length === 1);
+    selectedQuestionCount = normalizeQuestionCountForPool(poolLen, selectedQuestionCount);
+    syncQuestionCountSelectionUi();
+  }
+
+  function savePartialSessionCompletionIfNeeded() {
+    if (sessionCompletionSaved || !sessionActive || !sessionId) return;
+    var stats = getFirstAttemptSessionStats();
+    if (stats.question_count <= 0) return;
+    sessionCompletionSaved = true;
+    recordSessionCompletion(false);
+  }
+
+  function resetSessionUiForSetup() {
+    savePartialSessionCompletionIfNeeded();
+    closeQuizAnswerModal();
+    sessionActive = false;
+    sessionId = null;
+    sessionCompletionSaved = false;
+    completingSessionWrongIds = {};
+    wrongManageSelectedIds = {};
+    setQuizSubview('quiz-session-setup');
+    var poolLine = document.getElementById('quizSetupPoolLine');
+    var poolLen = getEligibleQuizPool().length;
+    if (poolLine) poolLine.textContent = poolLen > 0 ? ('풀 수 있는 문항: ' + poolLen + '개') : '단어가 없습니다.';
+    renderQuestionCountOptions(poolLen);
+    var startBtn = document.getElementById('quizSessionStart');
+    if (startBtn) startBtn.disabled = poolLen <= 0;
+    refreshCumulativeWrongUi().catch(function (e) { console.warn('refreshCumulativeWrongUi:', e); });
+  }
+
+  function syncQuestionCountSelectionUi() {
+    var poolLen = getEligibleQuizPool().length;
+    var pick = selectedQuestionCount;
+    if (defaultQuestionLimit != null && !window.__jogboCountUserPicked) {
+      pick = normalizeQuestionCountForPool(poolLen, String(defaultQuestionLimit));
+    } else {
+      pick = normalizeQuestionCountForPool(poolLen, pick);
+    }
+    selectedQuestionCount = pick;
+    $$('.quiz-count-btn').forEach(function (btn) {
+      var c = btn.getAttribute('data-count');
+      if (String(c) === String(pick)) btn.classList.add('selected');
+      else btn.classList.remove('selected');
+    });
+  }
+
+  function showSessionPlay() {
+    closeQuizAnswerModal();
+    setQuizSubview('quiz-session-play');
+  }
+
+  function showSessionComplete() {
+    closeQuizAnswerModal();
+    if (!sessionCompletionSaved) {
+      sessionCompletionSaved = true;
+      recordSessionCompletion(true);
+    }
+    sessionActive = false;
+    completingSessionWrongIds = Object.assign({}, sessionWrongIds);
+    var wrongN = Object.keys(completingSessionWrongIds).length;
+    setQuizSubview('quiz-session-complete');
+    var sum = document.getElementById('quizCompleteSummary');
+    if (sum) {
+      sum.textContent = '정답 ' + quizScore.correct + ' / ' + quizScore.total + ' (세션 ' + (fullDeck.length || 0) + '문항)\n틀린 문항(누적): ' + wrongN + '개';
+    }
+    var retryBtn = document.getElementById('quizSessionRetryWrong');
+    if (retryBtn) {
+      if (wrongN > 0) {
+        retryBtn.textContent = '이번 세션 틀린 ' + wrongN + '개 다시 풀기';
+        retryBtn.classList.remove('hidden');
+      } else {
+        retryBtn.classList.add('hidden');
+      }
+    }
+  }
+
+  function updateQuizProgressLine() {
+    var progressEl = document.getElementById('quizProgressLine');
+    if (!progressEl) return;
+    if (!sessionActive || !fullDeck.length) {
+      progressEl.textContent = '0 / 0 문제';
+      return;
+    }
+    var chunkLabel = chunkBoundsLabel();
+    var inChunk = activeDeck.length > 0 ? Math.min(activeIdx + 1, activeDeck.length) : 0;
+    var inChunkTotal = activeDeck.length;
+    progressEl.textContent = '청크 ' + chunkLabel + ' · ' + inChunk + '/' + inChunkTotal;
+    var banner = document.getElementById('quizChunkRetryBanner');
+    if (banner) {
+      if (chunkRetryRound && retryBannerCount > 0) {
+        banner.textContent = '틀린 ' + retryBannerCount + '개 다시 풀기';
+        banner.classList.remove('hidden');
+      } else {
+        banner.textContent = '';
+        banner.classList.add('hidden');
+      }
+    }
+  }
+
+  function buildAnswerLogPayload(correct) {
+    var qid = wordKeyForSession(currentQuizWord);
+    var attemptCount = bumpAttempt(qid);
+    var attemptInChunk = attemptCount;
+    return {
+      type: 'tokpass-jogbo-answer',
+      correct: !!correct,
+      tag: getTag(),
+      keyword: currentQuizWord && currentQuizWord.keyword != null ? String(currentQuizWord.keyword) : '',
+      meaning: currentQuizWord && currentQuizWord.meaning != null ? String(currentQuizWord.meaning) : '',
+      question_id: qid,
+      session_id: sessionId,
+      attempt_count: attemptCount,
+      ml_features: buildMlFeatures(attemptInChunk)
+    };
+  }
+
+  function buildAnswerLogRestRow(payload, studentId, studentName) {
+    var row = {
+      student_id: studentId,
+      student_name: studentName || null,
+      tag: payload.tag,
+      correct: payload.correct,
+      quiz_type: 'input',
+      created_at_kst: nowKstString()
+    };
+    var ml = (payload.ml_features && typeof payload.ml_features === 'object') ? Object.assign({}, payload.ml_features) : {};
+    if (payload.session_id) row.session_id = String(payload.session_id);
+    if (payload.attempt_count != null) {
+      var ac = parseInt(String(payload.attempt_count), 10);
+      if (!isNaN(ac)) row.attempt_count = ac;
+    }
+    if (payload.question_id != null && String(payload.question_id).trim()) {
+      var qidStr = String(payload.question_id).trim();
+      if (/^\d+$/.test(qidStr)) {
+        row.question_id = parseInt(qidStr, 10);
+      } else {
+        ml.question_id = qidStr;
+      }
+    }
+    if (Object.keys(ml).length) row.ml_features = ml;
+    return row;
+  }
+
+  async function beginSession(opts) {
+    opts = opts || {};
+    var pool = opts.pool || getEligibleQuizPool();
+    if (pool.length < 1) {
+      alert(isConnectorPage ? '연결사 단어가 없습니다.' : '풀 수 있는 단어가 없습니다.');
+      return;
+    }
+    var limit = opts.limit != null ? opts.limit : resolveSessionLimit(selectedQuestionCount, pool.length);
+    var deck;
+    var fixedOrder = opts.queuePolicy === 'session_wrong_only'
+      || opts.queuePolicy === 'cumulative_wrong_selected'
+      || opts.queuePolicy === 'cumulative_wrong_all';
+    if (fixedOrder) {
+      queuePolicy = opts.queuePolicy;
+      deck = shuffle(pool.slice()).slice(0, Math.min(limit, pool.length));
+    } else {
+      deck = await buildOrderedDeckFromPool(pool, limit);
+    }
+    if (!deck.length) {
+      alert('시작할 문항이 없습니다.');
+      return;
+    }
+    sessionQuestionLimit = deck.length;
+    sessionId = newSessionId();
+    sessionActive = true;
+    sessionCompletionSaved = false;
+    fullDeck = deck;
+    chunkIndex = 0;
+    chunkRetryRound = false;
+    retryBannerCount = 0;
+    roundWrongById = {};
+    sessionWrongIds = {};
+    attemptByQuestionId = {};
+    firstAttemptByQuestionId = {};
+    quizScore = { correct: 0, total: 0 };
+    var firstLen = Math.min(CHUNK_SIZE, fullDeck.length);
+    activeDeck = shuffle(fullDeck.slice(0, firstLen));
+    activeIdx = 0;
+    showSessionPlay();
+    presentQuestion();
+  }
+
+  async function beginWrongOnlySession() {
+    var wrongKeys = Object.keys(completingSessionWrongIds);
+    if (!wrongKeys.length) return;
+    var pool = getEligibleQuizPool();
+    var wordByKey = {};
+    pool.forEach(function (w) {
+      wordByKey[wordKeyForSession(w)] = w;
+    });
+    var wrongWords = [];
+    wrongKeys.forEach(function (k) {
+      if (wordByKey[k]) wrongWords.push(wordByKey[k]);
+    });
+    if (!wrongWords.length) {
+      alert('틀린 문항을 덱에서 찾을 수 없습니다.');
+      return;
+    }
+    await beginSession({
+      pool: wrongWords,
+      limit: wrongWords.length,
+      queuePolicy: 'session_wrong_only'
+    });
+  }
+
+  function advanceAfterRoundComplete() {
+    var wrongKeys = Object.keys(roundWrongById);
+    if (wrongKeys.length > 0) {
+      var wrongWords = wrongKeys.map(function (k) { return roundWrongById[k]; });
+      roundWrongById = {};
+      chunkRetryRound = true;
+      retryBannerCount = wrongWords.length;
+      activeDeck = shuffle(wrongWords);
+      activeIdx = 0;
+      var fb = $('#quizFeedback');
+      if (fb) {
+        fb.classList.remove('hidden', 'wrong');
+        fb.classList.add('correct');
+        fb.textContent = '청크 클리어 전 — 틀린 ' + wrongWords.length + '개 다시 풀기';
+      }
+      presentQuestion();
+      return;
+    }
+    chunkRetryRound = false;
+    retryBannerCount = 0;
+    var nextChunk = chunkIndex + 1;
+    if (nextChunk * CHUNK_SIZE >= fullDeck.length) {
+      showSessionComplete();
+      return;
+    }
+    chunkIndex = nextChunk;
+    var start = chunkIndex * CHUNK_SIZE;
+    var slice = fullDeck.slice(start, Math.min(start + CHUNK_SIZE, fullDeck.length));
+    activeDeck = shuffle(slice);
+    activeIdx = 0;
+    var fbClear = $('#quizFeedback');
+    if (fbClear) {
+      fbClear.classList.remove('hidden', 'wrong');
+      fbClear.classList.add('correct');
+      fbClear.textContent = '청크 ' + (chunkIndex + 1) + ' 시작!';
+    }
+    window.setTimeout(function () {
+      if (fbClear) {
+        fbClear.classList.add('hidden');
+        fbClear.textContent = '';
+      }
+      presentQuestion();
+    }, 450);
+  }
+
+  function startQuiz() {
+    beginSession().catch(function (e) { console.warn('beginSession failed:', e); });
+  }
+
+  function presentQuestion() {
     const progressEl = document.getElementById('quizProgressLine');
-    if (quizWordOrder.length < 1) {
+    if (!sessionActive || !activeDeck.length) {
       if (progressEl) progressEl.textContent = '0 / 0 문제';
-      $('#quizWord').textContent = isConnectorPage
-        ? '연결사 단어가 없습니다. 카드 탭에서 데이터가 로드됐는지 확인하거나, 노션 DB(연결사)를 확인해 주세요.'
-        : '단어가 필요합니다.';
-      var qm0 = $('#quizMeaning');
-      if (qm0) qm0.textContent = '';
-      $('#quizChoices').innerHTML = '';
-      $('#quizScore').textContent = '0 / 0';
+      if (!sessionActive) return;
+      advanceAfterRoundComplete();
       return;
     }
-    /** 인덱스가 범위 밖이면(끝난 직후 등) 재시작하지 않고 대기 — 문항 수 꼬임 방지 */
-    if (quizIndex >= quizWordOrder.length) {
+    if (activeIdx >= activeDeck.length) {
+      advanceAfterRoundComplete();
       return;
     }
-    if (progressEl) progressEl.textContent = (quizIndex + 1) + ' / ' + quizWordOrder.length + ' 문제';
-    currentQuizWord = quizWordOrder[quizIndex];
+    updateQuizProgressLine();
+    currentQuizWord = activeDeck[activeIdx];
     quizAnswered = false;
     quizGradeByCategory = false;
     quizGradeByPairing = false;
@@ -1420,26 +2197,14 @@
   }
 
   async function logAnswer(correct) {
-    var kw = '';
-    var meaning = '';
-    if (currentQuizWord) {
-      if (currentQuizWord.keyword != null) kw = String(currentQuizWord.keyword);
-      if (currentQuizWord.meaning != null) meaning = String(currentQuizWord.meaning);
-    }
+    var payload = buildAnswerLogPayload(correct);
     var _hrefLog = window.location && window.location.href ? window.location.href : '';
     var studentId = (parseQueryKey(_hrefLog, 'student_id') || parseQueryKey(_hrefLog, 'user') || '').trim();
 
-    var jogboPayload = {
-      type: 'tokpass-jogbo-answer',
-      correct: !!correct,
-      tag: getTag(),
-      keyword: kw,
-      meaning: meaning
-    };
     /** iframe 부모 또는 새 창 opener → 메인 똑패스 saveResult (별도 점수 API 없음) */
     try {
       if (window.parent && window.parent !== window) {
-        window.parent.postMessage(jogboPayload, '*');
+        window.parent.postMessage(payload, '*');
         var hint0 = document.getElementById('jogboAppScoreLine');
         if (hint0) {
           hint0.textContent = correct
@@ -1452,7 +2217,7 @@
     } catch (_pm) {}
     try {
       if (window.opener && !window.opener.closed) {
-        window.opener.postMessage(jogboPayload, '*');
+        window.opener.postMessage(payload, '*');
         var hint1 = document.getElementById('jogboAppScoreLine');
         if (hint1) {
           hint1.textContent = correct
@@ -1466,7 +2231,6 @@
 
     const cfg = window.APP_CONFIG;
     if (!cfg || !cfg.SUPABASE_URL || !cfg.SUPABASE_ANON_KEY) return;
-    const tag = getTag();
     var sidGuest = (studentId && String(studentId).trim()) ? String(studentId).trim() : (parseQueryKey(_hrefLog, 'student_id') || parseQueryKey(_hrefLog, 'user') || 'guest');
     var nameGuest = parseQueryKey(_hrefLog, 'student_name') || parseQueryKey(_hrefLog, 'name') || '';
 
@@ -1479,16 +2243,12 @@
           'Authorization': 'Bearer ' + cfg.SUPABASE_ANON_KEY,
           'Prefer': 'return=minimal'
         },
-        body: JSON.stringify({
-          student_id: sidGuest,
-          student_name: nameGuest || null,
-          tag: tag,
-          correct: correct,
-          quiz_type: 'input',
-          created_at_kst: nowKstString()
-        })
+        body: JSON.stringify(buildAnswerLogRestRow(payload, sidGuest, nameGuest))
       });
-      if (!res.ok) throw new Error(res.statusText);
+      if (!res.ok) {
+        var errText = await res.text().catch(function () { return ''; });
+        throw new Error(res.status + ' ' + errText);
+      }
       await patchJogboScoreToStudents(correct, sidGuest, cfg);
     } catch (e) {
       console.warn('answer_logs insert failed:', e);
@@ -1529,6 +2289,17 @@
     quizScore.total++;
     if (correct) quizScore.correct++;
 
+    var qKey = wordKeyForSession(currentQuizWord);
+    if (!chunkRetryRound && !Object.prototype.hasOwnProperty.call(firstAttemptByQuestionId, qKey)) {
+      firstAttemptByQuestionId[qKey] = !!correct;
+    }
+    if (!correct) {
+      roundWrongById[qKey] = currentQuizWord;
+      sessionWrongIds[qKey] = true;
+    } else if (roundWrongById[qKey]) {
+      delete roundWrongById[qKey];
+    }
+
     $$('#quizChoices li').forEach(el => {
       el.classList.add('disabled');
       const elTheme = el.getAttribute('data-theme');
@@ -1539,57 +2310,209 @@
         var okKk = correctThemes.length ? correctThemes[0] : '';
         if (okKk && String(elTheme || '').trim().toLowerCase() === String(okKk).trim().toLowerCase()) el.classList.add('correct');
       } else {
-        if (correctThemes.includes(elTheme)) el.classList.add('correct');
+      if (correctThemes.includes(elTheme)) el.classList.add('correct');
       }
       if (el === li && !correct) el.classList.add('wrong');
     });
 
     const fb = $('#quizFeedback');
-    fb.classList.remove('hidden');
-    fb.classList.add(correct ? 'correct' : 'wrong');
+    fb.classList.add('hidden');
+    fb.textContent = '';
     var meanLine = '';
     if (currentQuizWord) {
       if (quizGradeByMeaning) {
         var ct = currentQuizWord.category ? String(currentQuizWord.category).trim() : '';
-        if (categoryLabel && ct) meanLine = '\n' + categoryLabel + ': ' + ct;
+        if (categoryLabel && ct) meanLine = categoryLabel + ': ' + ct;
       } else if (themeLabel === '격') {
         var catG = currentQuizWord.category && String(currentQuizWord.category).trim();
         var mp = correctThemes.map(function (t) { return getCaseMeaning(catG, t); });
-        if (mp.length) meanLine = '\n의미: ' + mp.join(', ');
+        if (mp.length) meanLine = '의미: ' + mp.join(', ');
       } else if (quizGradeByParticipleBlank) {
         var exPart = parseExampleEnglish(currentQuizWord.example);
-        if (exPart) meanLine = '\n예문: ' + exPart;
+        if (exPart) meanLine = '예문: ' + exPart;
       } else {
         var m0 = currentQuizWord.meaning && String(currentQuizWord.meaning).trim();
-        if (m0) meanLine = '\n뜻: ' + m0;
+        if (m0) meanLine = '뜻: ' + m0;
         var ex0 = currentQuizWord.example && String(currentQuizWord.example).trim();
-        if (quizGradeByPairing && ex0) meanLine += '\n예문: ' + ex0;
+        if (quizGradeByPairing && ex0) meanLine += (meanLine ? '\n' : '') + '예문: ' + ex0;
       }
     }
-    fb.textContent = correct
-      ? ('✅ 정답! +5점 스코어에 반영돼요.' + meanLine)
-      : ('💪 아쉽지만 감점 없어요! 다음엔 맞춰보자.\n정답: ' + correctLabel + meanLine);
+    var kw = currentQuizWord && currentQuizWord.keyword ? String(currentQuizWord.keyword).trim() : '—';
+    var modalMeaning = '';
+    if (quizGradeByMeaning) {
+      modalMeaning = correctThemes.length ? correctThemes[0] : (currentQuizWord.meaning ? String(currentQuizWord.meaning).trim() : '');
+    } else {
+      modalMeaning = currentQuizWord && currentQuizWord.meaning ? String(currentQuizWord.meaning).trim() : '';
+    }
+    var modalExtra = '';
+    if (!correct) {
+      modalExtra = '정답: ' + correctLabel;
+      if (meanLine && meanLine.indexOf('뜻:') !== 0) modalExtra += '\n' + meanLine;
+    } else if (meanLine) {
+      modalExtra = meanLine;
+    } else {
+      modalExtra = '스코어에 +5점 반영';
+    }
     $('#quizScore').textContent = quizScore.correct + ' / ' + quizScore.total;
-
     logAnswer(correct);
+    showQuizAnswerModal(correct, {
+      keyword: kw,
+      meaning: modalMeaning,
+      extra: modalExtra
+    });
   }
+
+  (function bindQuizAnswerModal() {
+    var nextBtn = document.getElementById('quizModalNext');
+    if (nextBtn) nextBtn.addEventListener('click', advanceToNextQuestion);
+  })();
 
   (function bindQuizNext() {
     var qn = $('#quizNext');
     if (!qn) return;
-    qn.addEventListener('click', function () {
-      if (quizAnswered && quizIndex < quizWordOrder.length - 1) {
-        quizIndex++;
-        nextQuiz();
-      } else if (quizAnswered && quizIndex >= quizWordOrder.length - 1) {
-        const fb = $('#quizFeedback');
-        fb.classList.remove('hidden');
-        fb.classList.add('correct');
-        fb.textContent = '퀴즈 끝! ' + quizScore.correct + ' / ' + quizScore.total + ' 맞음';
-        $('#quizChoices').innerHTML = '';
-        quizIndex++;
-      }
-    });
+    qn.addEventListener('click', advanceToNextQuestion);
+  })();
+
+  (function bindSessionSetupUi() {
+    var countGrid = document.getElementById('quizCountGrid');
+    if (countGrid) {
+      countGrid.addEventListener('click', function (ev) {
+        var btn = ev.target && ev.target.closest ? ev.target.closest('.quiz-count-btn') : null;
+        if (!btn) return;
+        window.__jogboCountUserPicked = true;
+        selectedQuestionCount = btn.getAttribute('data-count') || '20';
+        syncQuestionCountSelectionUi();
+      });
+    }
+    var startBtn = document.getElementById('quizSessionStart');
+    if (startBtn) {
+      startBtn.addEventListener('click', function () {
+        if (startBtn.disabled) return;
+        startBtn.disabled = true;
+        var prevLabel = startBtn.textContent;
+        startBtn.textContent = '준비 중…';
+        beginSession().catch(function (e) {
+          console.warn('beginSession failed:', e);
+          alert('세션을 시작하지 못했습니다. 잠시 후 다시 시도해 주세요.');
+        }).finally(function () {
+          startBtn.disabled = false;
+          startBtn.textContent = prevLabel;
+        });
+      });
+    }
+    var retryWrongBtn = document.getElementById('quizSessionRetryWrong');
+    if (retryWrongBtn) {
+      retryWrongBtn.addEventListener('click', function () {
+        if (retryWrongBtn.disabled) return;
+        retryWrongBtn.disabled = true;
+        beginWrongOnlySession().catch(function (e) {
+          console.warn('beginWrongOnlySession failed:', e);
+          alert('틀린 문항 세션을 시작하지 못했습니다.');
+        }).finally(function () {
+          retryWrongBtn.disabled = false;
+        });
+      });
+    }
+    var finishBtn = document.getElementById('quizSessionFinish');
+    if (finishBtn) {
+      finishBtn.addEventListener('click', function () {
+        resetSessionUiForSetup();
+      });
+    }
+    var manageWrongBtn = document.getElementById('quizManageWrongBtn');
+    if (manageWrongBtn) {
+      manageWrongBtn.addEventListener('click', function () {
+        showWrongManageScreen().catch(function (e) {
+          console.warn('showWrongManageScreen:', e);
+          alert('누적 오답을 불러오지 못했습니다.');
+        });
+      });
+    }
+    var wrongBackBtn = document.getElementById('quizWrongManageBack');
+    if (wrongBackBtn) {
+      wrongBackBtn.addEventListener('click', function () {
+        resetSessionUiForSetup();
+      });
+    }
+    var wrongList = document.getElementById('quizWrongList');
+    if (wrongList) {
+      wrongList.addEventListener('change', function (ev) {
+        var t = ev.target;
+        if (!t || !t.classList || !t.classList.contains('quiz-wrong-check')) return;
+        var qid = t.getAttribute('data-qid');
+        if (!qid) return;
+        wrongManageSelectedIds[qid] = !!t.checked;
+        var selectAll = document.getElementById('quizWrongSelectAll');
+        if (selectAll) {
+          selectAll.checked = cumulativeWrongRows.length > 0 &&
+            cumulativeWrongRows.every(function (r) { return wrongManageSelectedIds[r.question_id]; });
+        }
+      });
+    }
+    var wrongSelectAll = document.getElementById('quizWrongSelectAll');
+    if (wrongSelectAll) {
+      wrongSelectAll.addEventListener('change', function () {
+        var on = !!wrongSelectAll.checked;
+        cumulativeWrongRows.forEach(function (r) {
+          wrongManageSelectedIds[r.question_id] = on;
+        });
+        renderWrongManageList();
+      });
+    }
+    var wrongDismissBtn = document.getElementById('quizWrongDismissSelected');
+    if (wrongDismissBtn) {
+      wrongDismissBtn.addEventListener('click', function () {
+        var ids = getWrongManageSelectedIds();
+        if (!ids.length) {
+          alert('삭제할 항목을 선택해 주세요.');
+          return;
+        }
+        wrongDismissBtn.disabled = true;
+        dismissWrongQuestions(ids).then(function (ok) {
+          if (!ok) alert('삭제 처리에 실패했습니다.');
+          return showWrongManageScreen();
+        }).finally(function () {
+          wrongDismissBtn.disabled = false;
+          refreshCumulativeWrongUi().catch(function () {});
+        });
+      });
+    }
+    var wrongRetrySelBtn = document.getElementById('quizWrongRetrySelected');
+    if (wrongRetrySelBtn) {
+      wrongRetrySelBtn.addEventListener('click', function () {
+        var ids = getWrongManageSelectedIds();
+        if (!ids.length) {
+          alert('다시 풀 항목을 선택해 주세요.');
+          return;
+        }
+        wrongRetrySelBtn.disabled = true;
+        beginCumulativeWrongSession(ids, 'cumulative_wrong_selected').catch(function (e) {
+          console.warn(e);
+          alert('세션을 시작하지 못했습니다.');
+        }).finally(function () {
+          wrongRetrySelBtn.disabled = false;
+        });
+      });
+    }
+    var wrongRetryAllBtn = document.getElementById('quizWrongRetryAll');
+    if (wrongRetryAllBtn) {
+      wrongRetryAllBtn.addEventListener('click', function () {
+        if (!cumulativeWrongRows.length) return;
+        var ids = cumulativeWrongRows.map(function (r) { return r.question_id; });
+        wrongRetryAllBtn.disabled = true;
+        beginCumulativeWrongSession(ids, 'cumulative_wrong_all').catch(function (e) {
+          console.warn(e);
+          alert('세션을 시작하지 못했습니다.');
+        }).finally(function () {
+          wrongRetryAllBtn.disabled = false;
+        });
+      });
+    }
+    try {
+      var _hrefCount = window.location && window.location.href ? window.location.href : '';
+      var countQ = parseQueryKey(_hrefCount, 'jogbo_count');
+      if (countQ) selectedQuestionCount = countQ;
+    } catch (e) {}
   })();
 
   bindQuizDimensionLiveRefresh();
@@ -1671,9 +2594,30 @@
 
   window.addEventListener('message', function (ev) {
     var data = ev.data;
-    if (!data || data.type !== 'tokpass-jogbo-config' || !Array.isArray(data.tests)) return;
-    window.__tokpassJogboTests = data.tests;
-    renderJogboSwitchBar();
+    if (!data || data.type !== 'tokpass-jogbo-config') return;
+    if (Array.isArray(data.tests)) {
+      window.__tokpassJogboTests = data.tests;
+      renderJogboSwitchBar();
+    }
+    if (data.default_jogbo_question_count != null && data.default_jogbo_question_count !== '') {
+      var rawCnt = data.default_jogbo_question_count;
+      if (rawCnt === 'all' || rawCnt === 0 || String(rawCnt) === '0') {
+        if (!window.__jogboCountUserPicked) {
+          defaultQuestionLimit = 'all';
+          selectedQuestionCount = 'all';
+          renderQuestionCountOptions(getEligibleQuizPool().length);
+        }
+      } else {
+        var parsedCnt = parseInt(String(rawCnt), 10);
+        if (!isNaN(parsedCnt)) {
+          defaultQuestionLimit = parsedCnt;
+          if (!window.__jogboCountUserPicked) {
+            selectedQuestionCount = normalizeQuestionCountForPool(getEligibleQuizPool().length, String(parsedCnt));
+            renderQuestionCountOptions(getEligibleQuizPool().length);
+          }
+        }
+      }
+    }
   });
 
   /** 메인 앱(부모·opener)에서 점수 반영 후 보내는 확인 — 해설 아래 고정 줄 + 피드백에도 덧붙임 */
@@ -1728,17 +2672,18 @@
     });
     var exitBtn = document.getElementById('btn-exit-quiz');
     if (exitBtn) exitBtn.addEventListener('click', function () {
+      savePartialSessionCompletionIfNeeded();
       if (window.parent && window.parent !== window) {
         try {
           window.parent.postMessage({ type: 'tokpass-jogbo-close' }, '*');
         } catch (e) {}
         return;
       }
-      if (window.opener) {
-        try { window.opener.focus(); } catch (e) {}
-      }
-      window.close();
-    });
+    if (window.opener) {
+      try { window.opener.focus(); } catch (e) {}
+    }
+    window.close();
+  });
   })();
 
   // ——— 초기화 ———

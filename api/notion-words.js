@@ -69,7 +69,18 @@ function normalizeCaseName(name) {
   return name || '';
 }
 
-function pagesToWords(allPages, ctx) {
+function buildNotionQuestionId(dbId, pageId, category, keyword, themeExtra) {
+  const did = String(dbId || '').trim().replace(/-/g, '');
+  const pid = String(pageId || '').trim().replace(/-/g, '');
+  const base = (did || 'node') + ':' + (pid || 'unknown');
+  const cat = String(category || '').trim();
+  const kw = String(keyword || '').trim();
+  const th = String(themeExtra || '').trim();
+  if (kw) return base + '::' + cat + '::' + kw + (th ? '::' + th : '');
+  return base;
+}
+
+function pagesToWords(allPages, ctx, dbId) {
   const {
     useWideTable,
     caseColumnIds,
@@ -83,14 +94,17 @@ function pagesToWords(allPages, ctx) {
   if (useWideTable) {
     const byKey = {};
     for (const page of allPages) {
+      const pageId = page.id || '';
       const categoryVal = categoryId ? getPropPlain(page, categoryId) : '';
       for (const [caseName, propId] of Object.entries(caseColumnIds)) {
         const keyword = getPropPlain(page, propId);
         if (!keyword || keyword.trim() === '-' || keyword.trim() === '') continue;
         const themeVal = normalizeCaseName(caseName);
-        const key = (categoryVal || '') + '|' + keyword.trim();
+        const key = (categoryVal || '') + '|' + keyword.trim() + '|' + themeVal;
         if (!byKey[key]) {
           byKey[key] = {
+            notion_page_id: pageId,
+            question_id: buildNotionQuestionId(dbId, pageId, categoryVal || themeVal, keyword.trim(), themeVal),
             keyword: keyword.trim(),
             meaning: themeVal,
             example: '',
@@ -109,6 +123,7 @@ function pagesToWords(allPages, ctx) {
   }
 
   return allPages.map((page) => {
+    const pageId = page.id || '';
     const keyword = getPropPlain(page, keyId);
     const meaning = meaningId ? getPropPlain(page, meaningId) : '';
     const example = exampleId ? getPropPlain(page, exampleId) : '';
@@ -117,13 +132,28 @@ function pagesToWords(allPages, ctx) {
     const categoryMulti = categoryId ? getPropMultiSelect(page, categoryId) : [];
     const categorySingle = categoryId && !categoryMulti.length ? getPropPlain(page, categoryId) : '';
 
-    const word = { keyword, meaning, example };
+    const word = {
+      notion_page_id: pageId,
+      question_id: buildNotionQuestionId(dbId, pageId, '', keyword, ''),
+      keyword,
+      meaning,
+      example
+    };
     if (multi.length) word.themes = multi;
     else if (singleTheme) word.theme = singleTheme;
     if (categoryMulti.length) word.category = categoryMulti[0];
     else if (categorySingle) word.category = categorySingle;
     else if (word.themes && word.themes.length) word.category = word.themes[0];
     else if (word.theme) word.category = word.theme;
+    if (word.category || word.theme) {
+      word.question_id = buildNotionQuestionId(
+        dbId,
+        pageId,
+        word.category || '',
+        keyword,
+        word.theme || (word.themes && word.themes[0]) || ''
+      );
+    }
     return word;
   }).filter((w) => w.keyword);
 }
@@ -156,8 +186,11 @@ function resolveSchemaContext(schema) {
   const exampleId = findPropIdByOrder(schema, ['예문', 'example', 'Example']);
   const themeId = useWideTable
     ? null
-    : findPropIdByOrderExcluding(schema, ['격', 'case', 'Case', '테마', 'theme', 'Theme', '시제', '카테고리', '구분', '분류'], categoryId);
-  const themeLabel = useWideTable ? '격' : (themeId && schema[themeId] && schema[themeId].name ? schema[themeId].name : '테마');
+    : findPropIdByOrderExcluding(schema, ['격', 'case', 'Case', '테마', 'theme', 'Theme', '시제', '관련시제', '관련 시제', '카테고리', '구분', '분류'], categoryId);
+  const themeLabelRaw = useWideTable ? '격' : (themeId && schema[themeId] && schema[themeId].name ? schema[themeId].name : '테마');
+  const themeLabel = /^관련\s*시제$/i.test(themeLabelRaw) || themeLabelRaw === '관련시제'
+    ? '시제'
+    : themeLabelRaw;
   const categoryLabel = categoryId && schema[categoryId] && schema[categoryId].name ? schema[categoryId].name : '분류';
 
   return {
@@ -248,7 +281,7 @@ module.exports = async function handler(req, res) {
       }
     } while (nextCursor);
 
-    const words = pagesToWords(chunkPages, schemaCtx);
+    const words = pagesToWords(chunkPages, schemaCtx, databaseId);
     const setTitle = (req.query.set_title || '').trim() || setTitleFromDb || '노션 족보';
     const hasMore = !!nextCursor;
 
