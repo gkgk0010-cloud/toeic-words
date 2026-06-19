@@ -53,6 +53,168 @@
     window._tokpassNativeTts = _tokpassNativeTts;
   } catch (e) {}
 
+  /** 정답/오답 효과음 — 똑패스 iframe이면 부모와 동일, 단독(Vercel)이면 자체 oscillator */
+  var _jogboAudioCtx = null;
+  var _jogboMasterGain = null;
+  var JOGBO_CORRECT_PEAK = 0.38;
+  var JOGBO_WRONG_PEAK = 0.42;
+  var JOGBO_PRONUNCIATION_GAIN = 6.5;
+  var JOGBO_MASTER_GAIN = 1.2;
+
+  function jogboSharedAudioContext() {
+    var Ctx = window.AudioContext || window.webkitAudioContext;
+    if (!Ctx) return null;
+    if (!_jogboAudioCtx || _jogboAudioCtx.state === 'closed') {
+      _jogboAudioCtx = new Ctx();
+      _jogboMasterGain = null;
+    }
+    return _jogboAudioCtx;
+  }
+
+  function jogboQuizSfxContext() {
+    return jogboSharedAudioContext();
+  }
+
+  function jogboTtsAudioContext() {
+    return jogboSharedAudioContext();
+  }
+
+  function jogboMasterGainNode(ctx) {
+    if (!_jogboMasterGain || _jogboMasterGain.context !== ctx) {
+      _jogboMasterGain = ctx.createGain();
+      _jogboMasterGain.gain.setValueAtTime(JOGBO_MASTER_GAIN, ctx.currentTime);
+      _jogboMasterGain.connect(ctx.destination);
+    }
+    return _jogboMasterGain;
+  }
+
+  function jogboResumeAudioCtx(ctx, fn) {
+    if (!ctx) return;
+    if (ctx.state === 'suspended') ctx.resume().then(fn).catch(fn);
+    else fn();
+  }
+
+  function jogboPlayAudioUrlWithGain(url, gainVal) {
+    return new Promise(function (resolve, reject) {
+      var ctx = jogboTtsAudioContext();
+      if (!ctx) {
+        var plain = new Audio(url);
+        plain.volume = 1;
+        plain.addEventListener('ended', function () { resolve(true); }, { once: true });
+        plain.addEventListener('error', function () { reject(new Error('audio failed')); }, { once: true });
+        plain.play().catch(function () { reject(new Error('audio play failed')); });
+        return;
+      }
+      var dest = jogboMasterGainNode(ctx);
+      var peakGain = gainVal;
+
+      function playBuffer(buf) {
+        var src = ctx.createBufferSource();
+        var g = ctx.createGain();
+        g.gain.setValueAtTime(peakGain, ctx.currentTime);
+        src.buffer = buf;
+        src.connect(g);
+        g.connect(dest);
+        src.onended = function () {
+          try { src.disconnect(); g.disconnect(); } catch (_d) {}
+          resolve(true);
+        };
+        src.start(0);
+      }
+
+      function playViaCaptureStream() {
+        var audio = new Audio(url);
+        audio.volume = 1;
+        audio.preload = 'auto';
+        audio.addEventListener('error', function () { reject(new Error('audio failed')); }, { once: true });
+        audio.play()
+          .then(function () {
+            var capture = audio.captureStream || audio.mozCaptureStream;
+            if (!capture) throw new Error('no captureStream');
+            var stream = capture.call(audio);
+            var msrc = ctx.createMediaStreamSource(stream);
+            var g = ctx.createGain();
+            g.gain.setValueAtTime(peakGain, ctx.currentTime);
+            msrc.connect(g);
+            g.connect(dest);
+            audio.addEventListener('ended', function () {
+              try { msrc.disconnect(); g.disconnect(); } catch (_dc) {}
+              resolve(true);
+            }, { once: true });
+          })
+          .catch(function () { playViaMediaElement(); });
+      }
+
+      function playViaMediaElement() {
+        var audio = new Audio(url);
+        audio.volume = 1;
+        audio.addEventListener('error', function () { reject(new Error('audio failed')); }, { once: true });
+        try {
+          var msrc = ctx.createMediaElementSource(audio);
+          var g = ctx.createGain();
+          g.gain.setValueAtTime(peakGain, ctx.currentTime);
+          msrc.connect(g);
+          g.connect(dest);
+          audio.addEventListener('ended', function () {
+            try { msrc.disconnect(); g.disconnect(); } catch (_dm) {}
+            resolve(true);
+          }, { once: true });
+          audio.play().catch(function (e) { reject(e); });
+        } catch (_me) {
+          audio.addEventListener('ended', function () { resolve(true); }, { once: true });
+          audio.play().catch(function () { reject(new Error('audio play failed')); });
+        }
+      }
+
+      jogboResumeAudioCtx(ctx, function () {
+        fetch(url, { mode: 'cors', credentials: 'omit', cache: 'default' })
+          .then(function (res) {
+            if (!res.ok) throw new Error('fetch ' + res.status);
+            return res.arrayBuffer();
+          })
+          .then(function (ab) { return ctx.decodeAudioData(ab.slice(0)); })
+          .then(playBuffer)
+          .catch(function () { playViaCaptureStream(); });
+      });
+    });
+  }
+
+  function playQuizFeedbackSound(isCorrect) {
+    try {
+      if (window.parent && window.parent !== window && typeof window.parent.tokpassQuizFeedbackSound === 'function') {
+        window.parent.tokpassQuizFeedbackSound(!!isCorrect, 'jogbo');
+        return;
+      }
+    } catch (_p) {}
+    try {
+      var ctx = jogboQuizSfxContext();
+      if (!ctx) return;
+      var run = function () {
+        try {
+          var osc = ctx.createOscillator();
+          var g = ctx.createGain();
+          osc.type = 'sine';
+          osc.frequency.value = isCorrect ? 784 : 196;
+          var peak = isCorrect ? JOGBO_CORRECT_PEAK : JOGBO_WRONG_PEAK;
+          var t0 = ctx.currentTime;
+          var tEnd = isCorrect ? 0.15 : 0.11;
+          g.gain.setValueAtTime(0.001, t0);
+          g.gain.linearRampToValueAtTime(peak, t0 + 0.018);
+          g.gain.linearRampToValueAtTime(0.001, t0 + tEnd);
+          osc.connect(g);
+          g.connect(jogboMasterGainNode(ctx));
+          osc.start(ctx.currentTime);
+          osc.stop(ctx.currentTime + (isCorrect ? 0.15 : 0.11));
+          osc.onended = function () {
+            try { osc.disconnect(); g.disconnect(); } catch (_dw) {}
+          };
+        } catch (_r) {}
+      };
+      if (ctx.state === 'suspended') ctx.resume().then(run).catch(run);
+      else run();
+    } catch (_s) {}
+  }
+
   const THEMES = ['현재', '과거', '미래', '현재완료'];
   /** 퀴즈 선택지: 격 퀴즈일 때 항상 이 목록에서 4개 고르기 (소유격만 네 개 나오는 것 방지) */
   const CASE_TYPES = ['주격', '목적격', '소유격', '소유대명사', '재귀대명사'];
@@ -248,12 +410,9 @@
             resolve(false);
             return;
           }
-          var audio = new Audio(urls[i++]);
-          audio.volume = 1;
-          audio.play()
-            .then(function () {
-              _lastGoogleAudio = audio;
-              resolve(true);
+          jogboPlayAudioUrlWithGain(urls[i++], JOGBO_PRONUNCIATION_GAIN)
+            .then(function (ok) {
+              resolve(!!ok);
             })
             .catch(function () {
               tryNext();
@@ -1417,19 +1576,17 @@
       if (firstAttemptByQuestionId[k]) correctCount++;
     });
     return {
-      question_count: keys.length || fullDeck.length,
+      question_count: keys.length,
       correct_count: correctCount
     };
   }
 
-  function recordSessionCompletion(isFullComplete) {
-    var cfg = window.APP_CONFIG;
-    if (!cfg || !cfg.SUPABASE_URL || !cfg.SUPABASE_ANON_KEY) return;
+  function buildSessionCompletionRow(isFullComplete) {
     var student = getStudentContext();
-    if (!student.id || !sessionId) return;
+    if (!student.id || !sessionId) return null;
     var stats = getFirstAttemptSessionStats();
-    if (stats.question_count <= 0) return;
-    var row = {
+    if (stats.question_count <= 0) return null;
+    return {
       user_id: String(student.id),
       tag: getTag(),
       session_id: sessionId,
@@ -1438,7 +1595,31 @@
       is_full_complete: isFullComplete !== false,
       created_at_kst: nowKstString()
     };
-    fetch(cfg.SUPABASE_URL + '/rest/v1/jogbo_session_completions', {
+  }
+
+  function notifyParentSessionEnd(row) {
+    if (!row) return;
+    try {
+      if (window.parent && window.parent !== window) {
+        window.parent.postMessage({ type: 'tokpass-jogbo-session-end', row: row }, '*');
+      }
+    } catch (_pm) {}
+    try {
+      if (window.opener && !window.opener.closed) {
+        window.opener.postMessage({ type: 'tokpass-jogbo-session-end', row: row }, '*');
+      }
+    } catch (_op) {}
+  }
+
+  function recordSessionCompletion(isFullComplete) {
+    var row = buildSessionCompletionRow(isFullComplete);
+    if (!row) return Promise.resolve(false);
+    notifyParentSessionEnd(row);
+    var inIframe = !!(window.parent && window.parent !== window);
+    if (inIframe) return Promise.resolve(true);
+    var cfg = window.APP_CONFIG;
+    if (!cfg || !cfg.SUPABASE_URL || !cfg.SUPABASE_ANON_KEY) return Promise.resolve(false);
+    return fetch(cfg.SUPABASE_URL + '/rest/v1/jogbo_session_completions', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -1451,10 +1632,13 @@
       if (!res.ok) {
         return res.text().then(function (t) {
           console.warn('jogbo_session_completions insert failed:', res.status, t);
+          return false;
         });
       }
+      return true;
     }).catch(function (e) {
       console.warn('jogbo_session_completions insert failed:', e);
+      return false;
     });
   }
 
@@ -1757,11 +1941,11 @@
   }
 
   function savePartialSessionCompletionIfNeeded() {
-    if (sessionCompletionSaved || !sessionActive || !sessionId) return;
+    if (sessionCompletionSaved || !sessionActive || !sessionId) return Promise.resolve(false);
     var stats = getFirstAttemptSessionStats();
-    if (stats.question_count <= 0) return;
+    if (stats.question_count <= 0) return Promise.resolve(false);
     sessionCompletionSaved = true;
-    recordSessionCompletion(false);
+    return recordSessionCompletion(false);
   }
 
   function resetSessionUiForSetup() {
@@ -2288,6 +2472,7 @@
     quizAnswered = true;
     quizScore.total++;
     if (correct) quizScore.correct++;
+    playQuizFeedbackSound(correct);
 
     var qKey = wordKeyForSession(currentQuizWord);
     if (!chunkRetryRound && !Object.prototype.hasOwnProperty.call(firstAttemptByQuestionId, qKey)) {
@@ -2620,6 +2805,19 @@
     }
   });
 
+  /** 부모(똑패스)가 iframe 닫기 전 중간 저장 요청 — 독해훈련소와 동일하게 부분 세션도 인증에 반영 */
+  window.addEventListener('message', function (ev) {
+    var data = ev.data;
+    if (!data || data.type !== 'tokpass-jogbo-request-save') return;
+    savePartialSessionCompletionIfNeeded().finally(function () {
+      try {
+        if (ev.source && typeof ev.source.postMessage === 'function') {
+          ev.source.postMessage({ type: 'tokpass-jogbo-session-saved', ok: true }, '*');
+        }
+      } catch (_ack) {}
+    });
+  });
+
   /** 메인 앱(부모·opener)에서 점수 반영 후 보내는 확인 — 해설 아래 고정 줄 + 피드백에도 덧붙임 */
   window.addEventListener('message', function (ev) {
     var data = ev.data;
@@ -2672,18 +2870,19 @@
     });
     var exitBtn = document.getElementById('btn-exit-quiz');
     if (exitBtn) exitBtn.addEventListener('click', function () {
-      savePartialSessionCompletionIfNeeded();
-      if (window.parent && window.parent !== window) {
-        try {
-          window.parent.postMessage({ type: 'tokpass-jogbo-close' }, '*');
-        } catch (e) {}
-        return;
-      }
-    if (window.opener) {
-      try { window.opener.focus(); } catch (e) {}
-    }
-    window.close();
-  });
+      savePartialSessionCompletionIfNeeded().finally(function () {
+        if (window.parent && window.parent !== window) {
+          try {
+            window.parent.postMessage({ type: 'tokpass-jogbo-close' }, '*');
+          } catch (e) {}
+          return;
+        }
+        if (window.opener) {
+          try { window.opener.focus(); } catch (e) {}
+        }
+        window.close();
+      });
+    });
   })();
 
   // ——— 초기화 ———
