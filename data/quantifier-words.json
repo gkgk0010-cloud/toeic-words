@@ -1,0 +1,39 @@
+{
+  "setTitle": "수량사고",
+  "themeLabel": "종류",
+  "categoryLabel": "종류",
+  "words": [
+    {"keyword": "one", "meaning": "하나의 (가산 단수)", "example": "One employee was promoted last month.", "category": "단수"},
+    {"keyword": "each", "meaning": "각각의 · 하나씩 (가산 단수)", "example": "Each department must submit a report.", "category": "단수"},
+    {"keyword": "every", "meaning": "모든 · 매 (가산 단수)", "example": "Every candidate needs to sign the form.", "category": "단수"},
+    {"keyword": "another", "meaning": "또 다른 하나 (가산 단수)", "example": "We need another copy of the contract.", "category": "단수"},
+
+    {"keyword": "various", "meaning": "다양한 (복수)", "example": "Various issues were discussed at the meeting.", "category": "복수"},
+    {"keyword": "many", "meaning": "많은 (복수)", "example": "Many customers complained about the delay.", "category": "복수"},
+    {"keyword": "multiple", "meaning": "여러 · 다수의 (복수)", "example": "Multiple factors affected sales.", "category": "복수"},
+    {"keyword": "several", "meaning": "몇몇의 · 여러 (복수)", "example": "Several employees volunteered for the project.", "category": "복수"},
+    {"keyword": "numerous", "meaning": "수많은 (복수)", "example": "Numerous complaints were filed last week.", "category": "복수"},
+    {"keyword": "a few", "meaning": "몇몇의 (복수)", "example": "A few clients canceled their orders.", "category": "복수"},
+    {"keyword": "few", "meaning": "거의 없는 · 소수의 (복수)", "example": "Few applicants met the requirements.", "category": "복수"},
+    {"keyword": "both", "meaning": "둘 다 (복수)", "example": "Both teams agreed to the proposal.", "category": "복수"},
+    {"keyword": "a number of", "meaning": "많은 · 다수의 (복수)", "example": "A number of errors were found in the report.", "category": "복수"},
+    {"keyword": "a variety of", "meaning": "다양한 (복수)", "example": "A variety of products are on display.", "category": "복수"},
+    {"keyword": "a series of", "meaning": "일련의 (복수)", "example": "A series of meetings were scheduled.", "category": "복수"},
+    {"keyword": "a selection of", "meaning": "선별된 여러 (복수)", "example": "A selection of samples were sent to clients.", "category": "복수"},
+    {"keyword": "a collection of", "meaning": "모음 · 여러 (복수)", "example": "A collection of documents were archived.", "category": "복수"},
+    {"keyword": "a range of", "meaning": "다양한 범위의 (복수)", "example": "A range of options are available.", "category": "복수"},
+    {"keyword": "an array of", "meaning": "다양한 · 여러 (복수)", "example": "An array of services are offered online.", "category": "복수"},
+    {"keyword": "a list of", "meaning": "목록의 · 여러 (복수)", "example": "A list of candidates were interviewed.", "category": "복수"},
+
+    {"keyword": "much", "meaning": "많은 (불가산)", "example": "Much effort was required to finish the task.", "category": "불가산"},
+    {"keyword": "a little", "meaning": "조금 (불가산)", "example": "A little patience is needed during the update.", "category": "불가산"},
+    {"keyword": "little", "meaning": "거의 없는 (불가산)", "example": "Little progress has been made so far.", "category": "불가산"},
+    {"keyword": "an amount of", "meaning": "일정량의 (불가산)", "example": "An amount of money was transferred yesterday.", "category": "불가산"},
+
+    {"keyword": "all", "meaning": "모든 (복수·불가산)", "example": "All information must be kept confidential.", "category": "복수&불가산"},
+    {"keyword": "most", "meaning": "대부분의 (복수·불가산)", "example": "Most employees attended the training.", "category": "복수&불가산"},
+    {"keyword": "some", "meaning": "일부 · 약간 (복수·불가산)", "example": "Some water was spilled on the floor.", "category": "복수&불가산"},
+    {"keyword": "other", "meaning": "다른 (복수·불가산)", "example": "Other equipment is stored in the warehouse.", "category": "복수&불가산"},
+    {"keyword": "more", "meaning": "더 많은 (복수·불가산)", "example": "More time is needed to review the plan.", "category": "복수&불가산"}
+  ]
+}

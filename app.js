@@ -53,7 +53,7 @@
     window._tokpassNativeTts = _tokpassNativeTts;
   } catch (e) {}
 
-  /** 정답/오답 효과음 — 똑패스 iframe이면 부모와 동일, 단독(Vercel)이면 자체 oscillator */
+  /** 정답/오답 효과음 — iframe이면 부모 WebView에만 재생, 단독(Vercel)이면 자체 oscillator */
   var _jogboAudioCtx = null;
   var _jogboMasterGain = null;
   var JOGBO_CORRECT_PEAK = 0.38;
@@ -88,19 +88,37 @@
     return _jogboMasterGain;
   }
 
-  function jogboResumeAudioCtx(ctx, fn) {
-    if (!ctx) return;
-    if (ctx.state === 'suspended') ctx.resume().then(fn).catch(fn);
-    else fn();
+  function jogboEnsureAudioRunning(ctx) {
+    if (!ctx || ctx.state === 'closed') return Promise.resolve(false);
+    if (ctx.state === 'running') return Promise.resolve(true);
+    if (ctx.state === 'suspended') {
+      return ctx.resume().then(function () { return ctx.state === 'running'; }).catch(function () { return false; });
+    }
+    return Promise.resolve(false);
   }
 
-  function jogboPlayAudioUrlWithGain(url, gainVal) {
+  function jogboResumeAudioCtx(ctx, fn) {
+    if (!ctx) return;
+    jogboEnsureAudioRunning(ctx).then(function (ok) {
+      if (ok) fn();
+    });
+  }
+
+  function jogboPlayAudioUrlWithGain(url, gainVal, speakGen) {
     return new Promise(function (resolve, reject) {
+      if (speakGen != null && speakGen !== _jogboSpeakGen) {
+        reject(new Error('cancelled'));
+        return;
+      }
       var ctx = jogboTtsAudioContext();
       if (!ctx) {
         var plain = new Audio(url);
         plain.volume = 1;
-        plain.addEventListener('ended', function () { resolve(true); }, { once: true });
+        _lastGoogleAudio = plain;
+        plain.addEventListener('ended', function () {
+          if (_lastGoogleAudio === plain) _lastGoogleAudio = null;
+          resolve(true);
+        }, { once: true });
         plain.addEventListener('error', function () { reject(new Error('audio failed')); }, { once: true });
         plain.play().catch(function () { reject(new Error('audio play failed')); });
         return;
@@ -109,14 +127,26 @@
       var peakGain = gainVal;
 
       function playBuffer(buf) {
+        if (speakGen != null && speakGen !== _jogboSpeakGen) {
+          reject(new Error('cancelled'));
+          return;
+        }
         var src = ctx.createBufferSource();
         var g = ctx.createGain();
         g.gain.setValueAtTime(peakGain, ctx.currentTime);
         src.buffer = buf;
         src.connect(g);
         g.connect(dest);
+        _jogboActiveStop = function () {
+          try { src.stop(0); src.disconnect(); g.disconnect(); } catch (_d) {}
+        };
         src.onended = function () {
+          if (_jogboActiveStop) _jogboActiveStop = null;
           try { src.disconnect(); g.disconnect(); } catch (_d) {}
+          if (speakGen != null && speakGen !== _jogboSpeakGen) {
+            reject(new Error('cancelled'));
+            return;
+          }
           resolve(true);
         };
         src.start(0);
@@ -126,9 +156,14 @@
         var audio = new Audio(url);
         audio.volume = 1;
         audio.preload = 'auto';
+        _lastGoogleAudio = audio;
         audio.addEventListener('error', function () { reject(new Error('audio failed')); }, { once: true });
         audio.play()
           .then(function () {
+            if (speakGen != null && speakGen !== _jogboSpeakGen) {
+              reject(new Error('cancelled'));
+              return;
+            }
             var capture = audio.captureStream || audio.mozCaptureStream;
             if (!capture) throw new Error('no captureStream');
             var stream = capture.call(audio);
@@ -137,8 +172,17 @@
             g.gain.setValueAtTime(peakGain, ctx.currentTime);
             msrc.connect(g);
             g.connect(dest);
+            _jogboActiveStop = function () {
+              try { audio.pause(); msrc.disconnect(); g.disconnect(); } catch (_dc) {}
+            };
             audio.addEventListener('ended', function () {
+              if (_jogboActiveStop) _jogboActiveStop = null;
+              if (_lastGoogleAudio === audio) _lastGoogleAudio = null;
               try { msrc.disconnect(); g.disconnect(); } catch (_dc) {}
+              if (speakGen != null && speakGen !== _jogboSpeakGen) {
+                reject(new Error('cancelled'));
+                return;
+              }
               resolve(true);
             }, { once: true });
           })
@@ -148,6 +192,7 @@
       function playViaMediaElement() {
         var audio = new Audio(url);
         audio.volume = 1;
+        _lastGoogleAudio = audio;
         audio.addEventListener('error', function () { reject(new Error('audio failed')); }, { once: true });
         try {
           var msrc = ctx.createMediaElementSource(audio);
@@ -155,13 +200,25 @@
           g.gain.setValueAtTime(peakGain, ctx.currentTime);
           msrc.connect(g);
           g.connect(dest);
+          _jogboActiveStop = function () {
+            try { audio.pause(); msrc.disconnect(); g.disconnect(); } catch (_dm) {}
+          };
           audio.addEventListener('ended', function () {
+            if (_jogboActiveStop) _jogboActiveStop = null;
+            if (_lastGoogleAudio === audio) _lastGoogleAudio = null;
             try { msrc.disconnect(); g.disconnect(); } catch (_dm) {}
+            if (speakGen != null && speakGen !== _jogboSpeakGen) {
+              reject(new Error('cancelled'));
+              return;
+            }
             resolve(true);
           }, { once: true });
           audio.play().catch(function (e) { reject(e); });
         } catch (_me) {
-          audio.addEventListener('ended', function () { resolve(true); }, { once: true });
+          audio.addEventListener('ended', function () {
+            if (_lastGoogleAudio === audio) _lastGoogleAudio = null;
+            resolve(true);
+          }, { once: true });
           audio.play().catch(function () { reject(new Error('audio play failed')); });
         }
       }
@@ -179,17 +236,67 @@
     });
   }
 
-  function playQuizFeedbackSound(isCorrect) {
+  var _jogboSfxLockUntil = 0;
+
+  function isJogboEmbeddedInTokpass() {
     try {
-      if (window.parent && window.parent !== window && typeof window.parent.tokpassQuizFeedbackSound === 'function') {
-        window.parent.tokpassQuizFeedbackSound(!!isCorrect, 'jogbo');
-        return;
-      }
-    } catch (_p) {}
+      return !!(window.parent && window.parent !== window);
+    } catch (_e) {
+      return true;
+    }
+  }
+
+  var _jogboQuizBeepUrls = null;
+  var _jogboQuizSfxAudio = null;
+
+  function jogboBuildBeepWavObjectUrl(freqHz, durationMs) {
+    var sampleRate = 22050;
+    var numSamples = Math.max(1, Math.floor(sampleRate * durationMs / 1000));
+    var dataSize = numSamples * 2;
+    var buffer = new ArrayBuffer(44 + dataSize);
+    var view = new DataView(buffer);
+    function writeStr(off, s) {
+      for (var i = 0; i < s.length; i++) view.setUint8(off + i, s.charCodeAt(i));
+    }
+    writeStr(0, 'RIFF');
+    view.setUint32(4, 36 + dataSize, true);
+    writeStr(8, 'WAVE');
+    writeStr(12, 'fmt ');
+    view.setUint32(16, 16, true);
+    view.setUint16(20, 1, true);
+    view.setUint16(22, 1, true);
+    view.setUint32(24, sampleRate, true);
+    view.setUint32(28, sampleRate * 2, true);
+    view.setUint16(32, 2, true);
+    view.setUint16(34, 16, true);
+    writeStr(36, 'data');
+    view.setUint32(40, dataSize, true);
+    var attack = Math.floor(sampleRate * 0.018);
+    var peak = 0.9;
+    for (var si = 0; si < numSamples; si++) {
+      var env = Math.min(1, si / Math.max(1, attack)) * Math.max(0, 1 - si / numSamples);
+      var sample = Math.sin(2 * Math.PI * freqHz * (si / sampleRate)) * peak * env;
+      var s16 = Math.max(-32768, Math.min(32767, Math.floor(sample * 32767)));
+      view.setInt16(44 + si * 2, s16, true);
+    }
+    return URL.createObjectURL(new Blob([buffer], { type: 'audio/wav' }));
+  }
+
+  function jogboGetQuizBeepUrl(isCorrect) {
+    if (!_jogboQuizBeepUrls) _jogboQuizBeepUrls = {};
+    var key = isCorrect ? 'correct' : 'wrong';
+    if (!_jogboQuizBeepUrls[key]) {
+      _jogboQuizBeepUrls[key] = jogboBuildBeepWavObjectUrl(isCorrect ? 784 : 196, isCorrect ? 150 : 110);
+    }
+    return _jogboQuizBeepUrls[key];
+  }
+
+  function playQuizFeedbackSoundOscillator(isCorrect) {
     try {
       var ctx = jogboQuizSfxContext();
       if (!ctx) return;
-      var run = function () {
+      jogboEnsureAudioRunning(ctx).then(function (ok) {
+        if (!ok) return;
         try {
           var osc = ctx.createOscillator();
           var g = ctx.createGain();
@@ -209,10 +316,39 @@
             try { osc.disconnect(); g.disconnect(); } catch (_dw) {}
           };
         } catch (_r) {}
-      };
-      if (ctx.state === 'suspended') ctx.resume().then(run).catch(run);
-      else run();
+      });
     } catch (_s) {}
+  }
+
+  function playQuizFeedbackSound(isCorrect) {
+    var now = Date.now();
+    if (now < _jogboSfxLockUntil) return;
+    _jogboSfxLockUntil = now + 320;
+    if (isJogboEmbeddedInTokpass()) {
+      try {
+        window.parent.postMessage({ type: 'tokpass-jogbo-sfx', correct: !!isCorrect }, '*');
+      } catch (_pm) {}
+      return;
+    }
+    try {
+      var vol = isCorrect ? JOGBO_CORRECT_PEAK : JOGBO_WRONG_PEAK;
+      try {
+        if (_jogboQuizSfxAudio) {
+          _jogboQuizSfxAudio.pause();
+          try { _jogboQuizSfxAudio.currentTime = 0; } catch (_rt) {}
+        }
+      } catch (_pa) {}
+      var audio = new Audio(jogboGetQuizBeepUrl(isCorrect));
+      audio.volume = Math.min(1, vol);
+      try { audio.setAttribute('playsinline', ''); } catch (_pi) {}
+      _jogboQuizSfxAudio = audio;
+      var played = audio.play();
+      if (played && typeof played.catch === 'function') {
+        played.catch(function () { playQuizFeedbackSoundOscillator(isCorrect); });
+      }
+    } catch (_s) {
+      playQuizFeedbackSoundOscillator(isCorrect);
+    }
   }
 
   const THEMES = ['현재', '과거', '미래', '현재완료'];
@@ -245,6 +381,8 @@
   let filteredWords = [];
   let quizWordOrder = []; // 퀴즈 시 매번 셔플된 순서
   let setTitle = '';
+  /** 부모 앱(?set_title=) 또는 학습인증용 표시명 */
+  var _setTitleFromUrl = '';
   let themeLabel = '시제'; // 격(퀴즈·카드). API에서 '격','구분' 등
   let categoryLabel = '';  // 분류(필터). API에서 '분류','종류' 등. 있으면 필터는 분류(1인칭 단수 등), 퀴즈는 격
   let cardIndex = 0;
@@ -343,9 +481,56 @@
   /** 단어(keyword) 영어 발음 — Android WebView는 speechSynthesis 무음이 잦아 Audio(Google TTS URL) 우선, 폴백은 Web Speech(vocab-app tts.ts와 동일 패턴). */
   var _speakTimer = null;
   var _lastGoogleAudio = null;
+  var _jogboSpeakGen = 0;
+  var _jogboSpeakScheduleTimer = null;
+  var _jogboActiveStop = null;
+
+  function jogboStopActiveAudio() {
+    if (_jogboActiveStop) {
+      try { _jogboActiveStop(); } catch (_st) {}
+      _jogboActiveStop = null;
+    }
+    try {
+      if (_lastGoogleAudio) {
+        _lastGoogleAudio.pause();
+        _lastGoogleAudio = null;
+      }
+    } catch (_la) {}
+  }
+
+  function cancelJogboSpeakLocal() {
+    _jogboSpeakGen++;
+    if (_jogboSpeakScheduleTimer) {
+      clearTimeout(_jogboSpeakScheduleTimer);
+      _jogboSpeakScheduleTimer = null;
+    }
+    if (_speakTimer) {
+      clearTimeout(_speakTimer);
+      _speakTimer = null;
+    }
+    jogboStopActiveAudio();
+    try {
+      if (window.speechSynthesis) window.speechSynthesis.cancel();
+    } catch (_sc) {}
+  }
+
+  function cancelJogboSpeak() {
+    cancelJogboSpeakLocal();
+    if (_tokpassNativeTts) {
+      try {
+        if (window.parent && window.parent !== window) {
+          window.parent.postMessage({ type: 'tokpass-speak-cancel' }, '*');
+        }
+      } catch (_pm) {}
+    }
+  }
 
   function isAndroidUA() {
     return typeof navigator !== 'undefined' && /Android/i.test(navigator.userAgent || '');
+  }
+
+  function isIosUA() {
+    return typeof navigator !== 'undefined' && /iPhone|iPad|iPod/i.test(navigator.userAgent || '');
   }
 
   function isLikelyInAppBrowser() {
@@ -391,7 +576,79 @@
   }
   unlockSpeechOnFirstInteraction();
 
-  function speakViaGoogleAudio(text) {
+  function jogboGoogleTtsUrls(text) {
+    var q = encodeURIComponent(String(text || '').trim().slice(0, 180));
+    return [
+      'https://translate.google.com/translate_tts?ie=UTF-8&tl=en-US&client=tw-ob&q=' + q,
+      'https://translate.google.com/translate_tts?ie=UTF-8&tl=en&client=tw-ob&q=' + q,
+      'https://translate.google.com/translate_tts?ie=UTF-8&tl=en-US&client=gtx&q=' + q,
+      'https://translate.google.com/translate_tts?ie=UTF-8&tl=en&client=gtx&q=' + q
+    ];
+  }
+
+  var _jogboGoogleBufCache = {};
+
+  function prefetchGoogleTts(text) {
+    var t = String(text || '').trim().slice(0, 180);
+    if (!t || _jogboGoogleBufCache[t]) return;
+    var ctx = jogboTtsAudioContext();
+    if (!ctx) return;
+    _jogboGoogleBufCache[t] = { pending: true };
+    fetch(jogboGoogleTtsUrls(t)[0], { mode: 'cors', credentials: 'omit', cache: 'force-cache' })
+      .then(function (res) {
+        if (!res.ok) throw new Error('fetch ' + res.status);
+        return res.arrayBuffer();
+      })
+      .then(function (ab) { return ctx.decodeAudioData(ab.slice(0)); })
+      .then(function (buf) {
+        _jogboGoogleBufCache[t] = { buf: buf };
+      })
+      .catch(function () {
+        delete _jogboGoogleBufCache[t];
+      });
+  }
+
+  function playGoogleTtsCached(text, speakGen) {
+    var t = String(text || '').trim().slice(0, 180);
+    if (!t) return Promise.resolve(false);
+    if (speakGen != null && speakGen !== _jogboSpeakGen) return Promise.resolve(false);
+    var entry = _jogboGoogleBufCache[t];
+    if (!entry || !entry.buf) return Promise.resolve(false);
+    return new Promise(function (resolve) {
+      var ctx = jogboTtsAudioContext();
+      if (!ctx) {
+        resolve(false);
+        return;
+      }
+      jogboEnsureAudioRunning(ctx).then(function (ok) {
+        if (!ok || (speakGen != null && speakGen !== _jogboSpeakGen)) {
+          resolve(false);
+          return;
+        }
+        try {
+          var src = ctx.createBufferSource();
+          var g = ctx.createGain();
+          g.gain.setValueAtTime(JOGBO_PRONUNCIATION_GAIN, ctx.currentTime);
+          src.buffer = entry.buf;
+          src.connect(g);
+          g.connect(jogboMasterGainNode(ctx));
+          _jogboActiveStop = function () {
+            try { src.stop(0); src.disconnect(); g.disconnect(); } catch (_st) {}
+          };
+          src.onended = function () {
+            if (_jogboActiveStop) _jogboActiveStop = null;
+            try { src.disconnect(); g.disconnect(); } catch (_d) {}
+            resolve(true);
+          };
+          src.start(0);
+        } catch (_e) {
+          resolve(false);
+        }
+      });
+    });
+  }
+
+  function speakViaGoogleAudio(text, speakGen) {
     return new Promise(function (resolve) {
       try {
         var t = String(text).trim().slice(0, 180);
@@ -399,30 +656,63 @@
           resolve(false);
           return;
         }
-        var q = encodeURIComponent(t);
-        var urls = [
-          'https://translate.google.com/translate_tts?ie=UTF-8&tl=en&client=tw-ob&q=' + q,
-          'https://translate.google.com/translate_tts?ie=UTF-8&tl=en&client=gtx&q=' + q
-        ];
-        var i = 0;
-        function tryNext() {
-          if (i >= urls.length) {
-            resolve(false);
+        if (speakGen != null && speakGen !== _jogboSpeakGen) {
+          resolve(false);
+          return;
+        }
+        playGoogleTtsCached(t, speakGen).then(function (played) {
+          if (played) {
+            resolve(true);
             return;
           }
-          jogboPlayAudioUrlWithGain(urls[i++], JOGBO_PRONUNCIATION_GAIN)
-            .then(function (ok) {
-              resolve(!!ok);
-            })
-            .catch(function () {
-              tryNext();
-            });
-        }
-        tryNext();
+          var urls = jogboGoogleTtsUrls(t);
+          var i = 0;
+          function tryNext() {
+            if (speakGen != null && speakGen !== _jogboSpeakGen) {
+              resolve(false);
+              return;
+            }
+            if (i >= urls.length) {
+              resolve(false);
+              return;
+            }
+            jogboPlayAudioUrlWithGain(urls[i++], JOGBO_PRONUNCIATION_GAIN, speakGen)
+              .then(function (ok) {
+                resolve(!!ok);
+              })
+              .catch(function () {
+                tryNext();
+              });
+          }
+          tryNext();
+        });
       } catch (e) {
         resolve(false);
       }
     });
+  }
+
+  function pickBestEnglishVoice(voices) {
+    if (!voices || !voices.length) return null;
+    var prefs = [
+      'Google US English', 'Samantha', 'Aaron', 'Karen', 'Daniel',
+      'Microsoft Zira', 'Microsoft Jenny', 'Microsoft David', 'English United States'
+    ];
+    var pi, vi;
+    for (pi = 0; pi < prefs.length; pi++) {
+      for (vi = 0; vi < voices.length; vi++) {
+        var v = voices[vi];
+        if (!v || !v.lang || v.lang.toLowerCase().indexOf('en') !== 0) continue;
+        if ((v.name || '').toLowerCase().indexOf(prefs[pi].toLowerCase()) >= 0) return v;
+      }
+    }
+    for (vi = 0; vi < voices.length; vi++) {
+      if (voices[vi].lang && voices[vi].lang.toLowerCase().indexOf('en-us') === 0) return voices[vi];
+    }
+    for (vi = 0; vi < voices.length; vi++) {
+      if (voices[vi].lang && voices[vi].lang.toLowerCase().indexOf('en') === 0) return voices[vi];
+    }
+    return voices[0] || null;
   }
 
   function buildUtterance(raw, withVoice) {
@@ -432,28 +722,21 @@
     utterance.pitch = 1;
     utterance.rate = 0.9;
     if (withVoice && window.speechSynthesis) {
-      var voices = window.speechSynthesis.getVoices();
-      var chosen = null;
-      var j;
-      for (j = 0; j < voices.length; j++) {
-        if (voices[j].lang && voices[j].lang.toLowerCase().indexOf('en') === 0) {
-          chosen = voices[j];
-          break;
-        }
-      }
-      if (!chosen && voices.length) chosen = voices[0];
+      var chosen = pickBestEnglishVoice(window.speechSynthesis.getVoices());
       if (chosen) utterance.voice = chosen;
     }
     return utterance;
   }
 
-  function speakKeywordWeb(raw) {
+  function speakKeywordWeb(raw, speakGen) {
     try {
       if (typeof window === 'undefined' || typeof window.speechSynthesis === 'undefined') return;
+      if (speakGen != null && speakGen !== _jogboSpeakGen) return;
 
       prepareSpeechSynthesis();
 
       function runSpeak(useVoice) {
+        if (speakGen != null && speakGen !== _jogboSpeakGen) return;
         try {
           window.speechSynthesis.cancel();
           var utterance = buildUtterance(raw, useVoice);
@@ -462,112 +745,118 @@
             if (retried) return;
             retried = true;
             window.setTimeout(function () {
+              if (speakGen != null && speakGen !== _jogboSpeakGen) return;
               try {
                 var u2 = buildUtterance(raw, false);
                 window.speechSynthesis.speak(u2);
               } catch (e) {}
-            }, isAndroidUA() ? 200 : 150);
+            }, isAndroidUA() ? 120 : 60);
           };
           window.speechSynthesis.speak(utterance);
         } catch (e) {}
       }
 
-      var delay = isAndroidUA() ? 120 : isLikelyInAppBrowser() ? 80 : 40;
-      function schedule(useVoice) {
-        window.setTimeout(function () { runSpeak(useVoice); }, delay);
-      }
-
       var voices = window.speechSynthesis.getVoices();
       if (voices.length > 0) {
-        schedule(true);
+        runSpeak(true);
         return;
       }
 
       function onVoices() {
         window.speechSynthesis.removeEventListener('voiceschanged', onVoices);
-        schedule(true);
+        runSpeak(true);
       }
       window.speechSynthesis.addEventListener('voiceschanged', onVoices);
       window.setTimeout(function () {
-        if (window.speechSynthesis.getVoices().length > 0) {
-          window.speechSynthesis.removeEventListener('voiceschanged', onVoices);
-          schedule(true);
-        } else {
-          window.speechSynthesis.removeEventListener('voiceschanged', onVoices);
-          schedule(false);
-        }
-      }, isAndroidUA() ? 500 : isLikelyInAppBrowser() ? 600 : 400);
+        window.speechSynthesis.removeEventListener('voiceschanged', onVoices);
+        if (speakGen != null && speakGen !== _jogboSpeakGen) return;
+        if (window.speechSynthesis.getVoices().length > 0) runSpeak(true);
+        else runSpeak(false);
+      }, isAndroidUA() ? 280 : isIosUA() ? 40 : 120);
     } catch (e) {}
   }
 
-  function speakKeyword(text) {
+  function speakKeyword(text, speakGen) {
     if (text == null || text === '') return;
     var clean = String(text).trim();
     if (!clean || clean === '—') return;
-    /** 똑패스 iframe(tokpass_native_tts=1): 부모 네이티브 TTS만 사용. Google TTS / Web Speech 경로로 내려가지 않음. */
+    if (speakGen == null) {
+      cancelJogboSpeak();
+      speakGen = _jogboSpeakGen;
+    }
+    if (speakGen !== _jogboSpeakGen) return;
+    /** 똑패스 iframe(tokpass_native_tts=1): 부모 TTS 브릿지 */
     if (_tokpassNativeTts) {
       try {
         if (typeof window !== 'undefined' && window.parent && window.parent !== window) {
-          window.parent.postMessage({ type: 'tokpass-speak-en', text: clean }, '*');
+          window.parent.postMessage({ type: 'tokpass-speak-en', text: clean, seq: speakGen }, '*');
         }
       } catch (e) {}
       return;
     }
+    jogboStopActiveAudio();
     try {
       if (window.speechSynthesis) window.speechSynthesis.cancel();
     } catch (e) {}
-    try {
-      if (_lastGoogleAudio) {
-        _lastGoogleAudio.pause();
-        _lastGoogleAudio = null;
-      }
-    } catch (e) {}
     prepareSpeechSynthesis();
 
-    if (isAndroidUA()) {
-      void speakViaGoogleAudio(clean).then(function (ok) {
-        if (!ok) speakKeywordWeb(clean);
-      });
+    if (isIosUA()) {
+      speakKeywordWeb(clean, speakGen);
       return;
     }
-    speakKeywordWeb(clean);
+
+    void speakViaGoogleAudio(clean, speakGen).then(function (ok) {
+      if (speakGen !== _jogboSpeakGen) return;
+      if (!ok) speakKeywordWeb(clean, speakGen);
+    });
   }
 
   function scheduleSpeakKeyword(text) {
-    if (_speakTimer) clearTimeout(_speakTimer);
-    _speakTimer = setTimeout(function () {
-      _speakTimer = null;
-      speakKeyword(text);
-    }, 400);
+    if (_jogboSpeakScheduleTimer) {
+      clearTimeout(_jogboSpeakScheduleTimer);
+      _jogboSpeakScheduleTimer = null;
+    }
+    _jogboSpeakScheduleTimer = setTimeout(function () {
+      _jogboSpeakScheduleTimer = null;
+      cancelJogboSpeak();
+      speakKeyword(text, _jogboSpeakGen);
+    }, 420);
   }
 
-  /** 부모(똑패스)가 Android에서만 보냄 — 부모 WebView는 Google TTS/speechSynthesis가 막히는 경우가 많아 iframe(Vercel origin)에서 재생 */
+  /** 부모(똑패스)가 Google TTS 실패 시 iframe에서 재생 요청 */
   window.addEventListener('message', function (ev) {
     try {
       if (!window.parent || ev.source !== window.parent) return;
       var p = ev.data;
-      if (!p || p.type !== 'tokpass-iframe-tts') return;
+      if (!p) return;
+      if (p.type === 'tokpass-speak-cancel') {
+        cancelJogboSpeak();
+        return;
+      }
+      if (p.type !== 'tokpass-iframe-tts') return;
       var t = String(p.text || '').trim();
       if (!t || t === '—') return;
+      cancelJogboSpeak();
+      var gen = _jogboSpeakGen;
       function ack(ok) {
         try {
           window.parent.postMessage({ type: 'tokpass-speak-ack', ok: !!ok }, '*');
         } catch (e) {}
       }
       try {
-        /** 부모(똑패스)가 translate.google.com 이 막힌 환경용 — Google 요청 없이 Web Speech만 */
         var skipGoogle = !!(p.skipGoogle || p.tokpassSkipGoogle);
-        if (isAndroidUA() && skipGoogle) {
-          speakKeywordWeb(t);
+        if (skipGoogle || isIosUA()) {
+          speakKeywordWeb(t, gen);
           ack(true);
-        } else if (isAndroidUA()) {
-          void speakViaGoogleAudio(t).then(function (ok) {
-            if (!ok) speakKeywordWeb(t);
+        } else {
+          void speakViaGoogleAudio(t, gen).then(function (ok) {
+            if (gen !== _jogboSpeakGen) {
+              ack(false);
+              return;
+            }
+            if (!ok) speakKeywordWeb(t, gen);
             ack(true);
           });
-        } else {
-          speakKeywordWeb(t);
-          ack(true);
         }
       } catch (e) {
         ack(false);
@@ -703,7 +992,7 @@
       syncQuizDimensionRow();
       var view = (window.location.hash || '#cards').slice(1) || 'cards';
       if (view === 'cards') renderCard();
-      else if (view === 'quiz') resetSessionUiForSetup();
+      else if (view === 'quiz' && !sessionActive) resetSessionUiForSetup();
     }
   }
 
@@ -785,7 +1074,7 @@
 
   function refreshNotionWordsInBackground(dbId, setTitleQ, cacheKey) {
     fetchNotionWordsProgressive(dbId, setTitleQ, function (partial) {
-      applyWordsPayloadToApp(partial, { refreshUi: true, resetCardIndex: false });
+      applyWordsPayloadToApp(partial, { refreshUi: !sessionActive, resetCardIndex: false });
       if (!partial.hasMore) {
         tryCacheWordsPayload(cacheKey, {
           setTitle: setTitle,
@@ -823,6 +1112,7 @@
     try {
       var _hrefLoad = window.location && window.location.href ? window.location.href : '';
       var setTitleQ = parseQueryKey(_hrefLoad, 'set_title');
+      _setTitleFromUrl = setTitleQ ? String(setTitleQ).trim() : '';
       var dbId = _dbIdFromUrl || (parseQueryKey(_hrefLoad, 'db') || parseQueryKey(_hrefLoad, 'database_id') || '').trim().replace(/-/g, '');
       let data;
 
@@ -985,10 +1275,27 @@
     if (resetCardIndex) cardIndex = 0;
   }
 
-  /** answer_logs.tag / 모니터용. 실제 로드된 테스트 제목(setTitle) 우선, 없으면 config·기본값 */
+  var BASIC_WORDS_DB_ID = '31a6e4c35a0e80dfad37f2231f41438d';
+
+  /** Notion DB 제목이 "학습용데이터" 등일 때 학습인증·오답 tag용 표시명 */
+  function resolveCertTagTitle() {
+    var urlT = _setTitleFromUrl && String(_setTitleFromUrl).trim();
+    if (urlT && urlT !== '학습용데이터') return urlT;
+    var st = setTitle && String(setTitle).trim();
+    if (st && st !== '학습용데이터') return st;
+    var dbKey = (_dbIdFromUrl || staticDeckKey || '').replace(/-/g, '');
+    if (!dbKey || dbKey === 'words.json') return '시제·부사';
+    if (dbKey === PRONOUN_DB_ID || staticDeckKey === 'pronoun') return '인칭대명사표';
+    if (dbKey === CONNECTOR_DB_ID || staticDeckKey === 'connector') return '연결사(접속부사)';
+    if (dbKey === BASIC_WORDS_DB_ID) return '기본어휘품사구별';
+    if (st) return st;
+    return (window.APP_CONFIG && window.APP_CONFIG.TEST_TITLE) || '토익 시제부사';
+  }
+
+  /** answer_logs.tag / 모니터용 */
   function getTag() {
-    if (isConnectorPage) return (setTitle && setTitle.trim()) || '연결사(접속부사)';
-    return (setTitle && setTitle.trim()) || (window.APP_CONFIG && window.APP_CONFIG.TEST_TITLE) || '토익 시제부사';
+    if (isConnectorPage) return resolveCertTagTitle() || '연결사(접속부사)';
+    return resolveCertTagTitle();
   }
 
   // ——— 카드 ———
@@ -1391,12 +1698,45 @@
   }
 
   function pickCategoryChoices(primary, allCats, count) {
-    if (!allCats.length || !primary) return [];
-    var others = allCats.filter(function (c) { return c !== primary; });
-    var shuffled = shuffle(others);
-    var choices = [primary].concat(shuffled.slice(0, count - 1));
-    while (choices.length < count) { choices.push(primary); }
-    return shuffle(choices.slice(0, count));
+    if (!primary) return [];
+    var pool = [];
+    var seen = {};
+    [primary].concat(allCats || []).forEach(function (c) {
+      if (!c || seen[c]) return;
+      seen[c] = true;
+      pool.push(c);
+    });
+    if (!pool.length) return [];
+    var choices = [primary];
+    shuffle(pool.filter(function (c) { return c !== primary; })).forEach(function (c) {
+      if (choices.length >= count) return;
+      choices.push(c);
+    });
+    if (choices.length < count && themeLabel === '격') {
+      shuffle(CASE_TYPES.slice()).forEach(function (c) {
+        if (choices.length >= count) return;
+        if (choices.indexOf(c) === -1) choices.push(c);
+      });
+    }
+    return shuffle(choices.slice(0, Math.min(count, choices.length)));
+  }
+
+  /** 격 퀴즈: 같은 영어형(he/she/it 등)에 여러 격 정답이 있으면 모두 인정 */
+  function getAcceptableQuizThemes(word) {
+    var themes = getCorrectThemes(word);
+    if (themeLabel !== '격' || !word) return themes;
+    var kw = String(word.keyword || '').trim().toLowerCase();
+    if (!kw) return themes;
+    var cat = word.category && String(word.category).trim();
+    var equiv = themes.slice();
+    allWords.forEach(function (w) {
+      if (!w || String(w.keyword || '').trim().toLowerCase() !== kw) return;
+      if (cat && w.category && String(w.category).trim() !== cat) return;
+      getCorrectThemes(w).forEach(function (t) {
+        if (t && equiv.indexOf(t) === -1) equiv.push(t);
+      });
+    });
+    return equiv;
   }
 
   function staticQuestionId(deckKey, word) {
@@ -2321,9 +2661,16 @@
     }
     $('#quizScore').textContent = quizScore.correct + ' / ' + quizScore.total;
     $$('#quizChoices li').forEach(li => {
-      li.addEventListener('click', onQuizChoice);
+      li.addEventListener('click', onQuizChoice, { once: true });
     });
-    if (!quizGradeByParticipleBlank) scheduleSpeakKeyword(currentQuizWord.keyword);
+    if (!quizGradeByParticipleBlank) {
+      prefetchGoogleTts(currentQuizWord.keyword);
+      scheduleSpeakKeyword(currentQuizWord.keyword);
+      if (activeIdx + 1 < activeDeck.length) {
+        var nextWord = activeDeck[activeIdx + 1];
+        if (nextWord && nextWord.keyword) prefetchGoogleTts(nextWord.keyword);
+      }
+    }
   }
 
   /** 똑패스 "오늘 족보"에 뜨게 하려면 created_at_kst(KST 문자열) 필수 */
@@ -2441,6 +2788,7 @@
 
   function onQuizChoice(ev) {
     if (quizAnswered) return;
+    quizAnswered = true;
     const li = ev.currentTarget;
     const theme = li.getAttribute('data-theme');
     var correctThemes;
@@ -2464,12 +2812,11 @@
         ? correctThemes.join(', ')
         : correctThemes.join(', ') + ' (' + (categoryLabel || '분류') + ')';
     } else {
-      correctThemes = getCorrectThemes(currentQuizWord);
+      correctThemes = themeLabel === '격' ? getAcceptableQuizThemes(currentQuizWord) : getCorrectThemes(currentQuizWord);
       if (!correctThemes.length && !quizGradeByCategory) correctThemes = ['현재'];
       correct = correctThemes.includes(theme);
       correctLabel = correctThemes.join(', ') + ' ' + themeLabel;
     }
-    quizAnswered = true;
     quizScore.total++;
     if (correct) quizScore.correct++;
     playQuizFeedbackSound(correct);
@@ -2751,30 +3098,49 @@
     }
   }
 
+  function filterJogboTestsByQuery(tests, q) {
+    q = String(q || '').trim().toLowerCase();
+    if (!q) return tests;
+    return tests.filter(function (t) {
+      return String(t.name || '').toLowerCase().indexOf(q) >= 0;
+    });
+  }
+
   function renderJogboSwitchBar() {
     var bar = document.getElementById('jogbo-switch-bar');
     var sel = document.getElementById('jogbo-test-select-inner');
+    var searchEl = document.getElementById('jogbo-test-search-inner');
     if (!bar || !sel) return;
     var tests = window.__tokpassJogboTests;
     if (!tests || !tests.length) return;
+    var query = searchEl ? String(searchEl.value || '') : '';
+    var filtered = filterJogboTestsByQuery(tests, query);
     var curDb = getCurrentDbIdFromUrl();
     if (isConnectorPage && window.FORCE_DB_ID) {
       curDb = String(window.FORCE_DB_ID).trim().replace(/-/g, '');
     }
     var selIdx = 0;
-    for (var j = 0; j < tests.length; j++) {
-      var dbj = String(tests[j].db != null ? tests[j].db : '').replace(/-/g, '');
+    for (var j = 0; j < filtered.length; j++) {
+      var dbj = String(filtered[j].db != null ? filtered[j].db : '').replace(/-/g, '');
       if (dbj === curDb) {
         selIdx = j;
         break;
       }
     }
-    sel.innerHTML = tests.map(function (t, i) {
-      var db = String(t.db != null ? t.db : '').replace(/-/g, '');
-      var name = String(t.name || (db || '테스트')).replace(/</g, '&lt;').replace(/>/g, '&gt;');
-      return '<option value="' + db.replace(/"/g, '&quot;') + '"' + (i === selIdx ? ' selected' : '') + '>' + name + '</option>';
-    }).join('');
+    if (!filtered.length) {
+      sel.innerHTML = '<option value="">' + (query ? '검색 결과 없음' : '족보 없음') + '</option>';
+    } else {
+      sel.innerHTML = filtered.map(function (t, i) {
+        var db = String(t.db != null ? t.db : '').replace(/-/g, '');
+        var name = String(t.name || (db || '테스트')).replace(/</g, '&lt;').replace(/>/g, '&gt;');
+        return '<option value="' + db.replace(/"/g, '&quot;') + '"' + (i === selIdx ? ' selected' : '') + '>' + name + '</option>';
+      }).join('');
+    }
     bar.classList.remove('hidden');
+    if (searchEl && !searchEl.dataset.jogboWired) {
+      searchEl.dataset.jogboWired = '1';
+      searchEl.addEventListener('input', renderJogboSwitchBar);
+    }
   }
 
   window.addEventListener('message', function (ev) {

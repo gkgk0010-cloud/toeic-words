@@ -32,7 +32,8 @@
       <a href="#quiz" class="nav-link" data-view="quiz">퀴즈</a>
     </nav>
     <div id="jogbo-switch-bar" class="jogbo-switch-bar hidden" role="region" aria-label="다른 족보로 이동">
-      <label for="jogbo-test-select-inner">다른 족보</label>
+      <label for="jogbo-test-search-inner">다른 족보</label>
+      <input type="search" id="jogbo-test-search-inner" class="jogbo-test-search-inner" placeholder="족보 이름 검색" autocomplete="off">
       <select id="jogbo-test-select-inner"></select>
       <button type="button" id="jogbo-test-go" class="btn-jogbo-go">이동</button>
     </div>
@@ -147,7 +148,7 @@
   </div>
 
   <script src="config.js?v=6" defer></script>
-  <script src="app.js?v=39" defer onerror="(function(){var e=document.getElementById('loadError'),i=document.getElementById('initStatus');if(e){e.style.display='block';e.innerHTML='app.js를 불러오지 못했습니다. 비행기모드·차단 해제 후 <strong>캐시 삭제</strong>하고 새로고침하세요.';}if(i){i.style.display='none';}})()"></script>
+  <script src="app.js?v=46" defer onerror="(function(){var e=document.getElementById('loadError'),i=document.getElementById('initStatus');if(e){e.style.display='block';e.innerHTML='app.js를 불러오지 못했습니다. 비행기모드·차단 해제 후 <strong>캐시 삭제</strong>하고 새로고침하세요.';}if(i){i.style.display='none';}})()"></script>
   <script>
     /** 여전히 "로딩 중"(인라인 스크립트까지 실행 안 됨)일 때만 — 대부분 HTML 캐시 꼬임 */
     setTimeout(function() {

@@ -20,7 +20,8 @@
       <a href="#quiz" class="nav-link" data-view="quiz">퀴즈</a>
     </nav>
     <div id="jogbo-switch-bar" class="jogbo-switch-bar hidden" role="region" aria-label="다른 족보로 이동">
-      <label for="jogbo-test-select-inner">다른 족보</label>
+      <label for="jogbo-test-search-inner">다른 족보</label>
+      <input type="search" id="jogbo-test-search-inner" class="jogbo-test-search-inner" placeholder="족보 이름 검색" autocomplete="off">
       <select id="jogbo-test-select-inner"></select>
       <button type="button" id="jogbo-test-go" class="btn-jogbo-go">이동</button>
     </div>
@@ -88,6 +89,6 @@
   <!-- 연결사 전용: 이 페이지만 항상 연결사 DB 로드 (URL ?db= 무관) -->
   <script>window.FORCE_DB_ID = '2fa6e4c35a0e81cda20ac619508bbeea';</script>
   <script src="config.js?v=6" defer></script>
-  <script src="app.js?v=32" defer></script>
+  <script src="app.js?v=46" defer></script>
 </body>
 </html>

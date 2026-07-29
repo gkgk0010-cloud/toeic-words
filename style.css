@@ -76,6 +76,17 @@ html, body {
   font-weight: 600;
   color: #4b5563;
   white-space: nowrap;
+  flex: 0 0 100%;
+}
+.jogbo-test-search-inner {
+  flex: 1 1 100%;
+  min-width: 140px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  border: 1px solid rgba(106, 17, 203, 0.25);
+  font-size: 0.9rem;
+  background: #fff;
+  box-sizing: border-box;
 }
 .jogbo-switch-bar select {
   flex: 1;
