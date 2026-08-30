@@ -53,6 +53,24 @@
     window._tokpassNativeTts = _tokpassNativeTts;
   } catch (e) {}
 
+  /** 똑패스 족보 툴바 — 단어 발음 ON/OFF (기본 켜짐) */
+  var _jogboPronunciationEnabled = true;
+  try {
+    var _hrefPron = typeof window !== 'undefined' && window.location && window.location.href ? window.location.href : '';
+    var _rawPron = parseQueryKey(_hrefPron, 'tokpass_jogbo_pronunciation');
+    if (_rawPron === '0' || String(_rawPron).toLowerCase() === 'false') _jogboPronunciationEnabled = false;
+    else if (_rawPron === '1' || String(_rawPron).toLowerCase() === 'true') _jogboPronunciationEnabled = true;
+  } catch (e) {}
+
+  function isJogboPronunciationEnabled() {
+    return _jogboPronunciationEnabled !== false;
+  }
+
+  function setJogboPronunciationEnabled(on) {
+    _jogboPronunciationEnabled = !!on;
+    if (!on) cancelJogboSpeak();
+  }
+
   /** 정답/오답 효과음 — iframe이면 부모 WebView에만 재생, 단독(Vercel)이면 자체 oscillator */
   var _jogboAudioCtx = null;
   var _jogboMasterGain = null;
@@ -777,6 +795,7 @@
   }
 
   function speakKeyword(text, speakGen) {
+    if (!isJogboPronunciationEnabled()) return;
     if (text == null || text === '') return;
     var clean = String(text).trim();
     if (!clean || clean === '—') return;
@@ -812,6 +831,7 @@
   }
 
   function scheduleSpeakKeyword(text) {
+    if (!isJogboPronunciationEnabled()) return;
     if (_jogboSpeakScheduleTimer) {
       clearTimeout(_jogboSpeakScheduleTimer);
       _jogboSpeakScheduleTimer = null;
@@ -2664,11 +2684,13 @@
       li.addEventListener('click', onQuizChoice, { once: true });
     });
     if (!quizGradeByParticipleBlank) {
-      prefetchGoogleTts(currentQuizWord.keyword);
-      scheduleSpeakKeyword(currentQuizWord.keyword);
-      if (activeIdx + 1 < activeDeck.length) {
-        var nextWord = activeDeck[activeIdx + 1];
-        if (nextWord && nextWord.keyword) prefetchGoogleTts(nextWord.keyword);
+      if (isJogboPronunciationEnabled()) {
+        prefetchGoogleTts(currentQuizWord.keyword);
+        scheduleSpeakKeyword(currentQuizWord.keyword);
+        if (activeIdx + 1 < activeDeck.length) {
+          var nextWord = activeDeck[activeIdx + 1];
+          if (nextWord && nextWord.keyword) prefetchGoogleTts(nextWord.keyword);
+        }
       }
     }
   }
@@ -3169,6 +3191,15 @@
         }
       }
     }
+    if (data.pronunciation_enabled != null) {
+      setJogboPronunciationEnabled(!!data.pronunciation_enabled);
+    }
+  });
+
+  window.addEventListener('message', function (ev) {
+    var data = ev.data;
+    if (!data || data.type !== 'tokpass-jogbo-pronunciation') return;
+    setJogboPronunciationEnabled(!!data.enabled);
   });
 
   /** 부모(똑패스)가 iframe 닫기 전 중간 저장 요청 — 독해훈련소와 동일하게 부분 세션도 인증에 반영 */
